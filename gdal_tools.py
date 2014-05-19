@@ -3,6 +3,8 @@ import osgeo
 import os
 from osgeo import osr
 import numpy as np
+import osgeo
+import os
 
 def extract_point_data(file,lats,lons):
  
@@ -39,7 +41,7 @@ def read_raster(file):
 
  return data
 
-def write_raster(metadata,data,file):
+'''def write_raster(metadata,data,file):
 
  cols = metadata['nlon']
  rows = metadata['nlat']
@@ -58,9 +60,9 @@ def write_raster(metadata,data,file):
  outband.WriteArray(np.flipud(data),0,0)
  ds = None
 
- return
+ return'''
 
-def shapefile2raster(raster_in,shp_in,raster_out,workspace,field):
+def shapefile2raster(raster_in,shp_in,raster_out,workspace,field,layer):
 
  #Extract coordinates and projection info from the target file
  ds = gdal.Open(raster_in)
@@ -72,13 +74,14 @@ def shapefile2raster(raster_in,shp_in,raster_out,workspace,field):
  proj4 = srs.ExportToProj4()
 
  #Rasterize the shapefile
- shp_out = '%s/%d' % (workspace,np.random.randint(10**5))
- os.system("ogr2ogr -t_srs '%s' %s %s" % (proj4,shp_out,shp_in))
  minx = gt[0]
  miny = gt[3]+rows*gt[5]
  maxx = gt[0]+cols*gt[1]
  maxy = gt[3]
- os.system('gdal_rasterize -init -9999 -a %s -te %.16f %.16f %.16f %.16f -tr %.16f %.16f %s %s' % (field,minx,miny,maxx,maxy,gt[1],gt[5],shp_out,raster_out))
+ shp_out = '%s/%d' % (workspace,np.random.randint(10**5))
+ #os.system('ogr2ogr -spat %.16f %.16f %.16f %.16f -overwrite -select CELLVALUE,MUKEY %s %s' % (dims['minlon'],dims['minlat'],dims['maxlon'],dims['maxlat'],shp_out,shp_in))
+ os.system("ogr2ogr -spat %.16f %.16f %.16f %.16f -overwrite -t_srs '%s' %s %s" % (minx,miny,maxx,maxy,proj4,shp_out,shp_in))
+ os.system('gdal_rasterize -ot Float32 -l %s -init -9999 -a %s -te %.16f %.16f %.16f %.16f -tr %.16f %.16f %s %s' % (layer,field,minx,miny,maxx,maxy,gt[1],gt[5],shp_out,raster_out))
  os.system('rm -r %s' % shp_out)
 
  return
@@ -87,6 +90,11 @@ def raster2raster(raster_template,raster_in,raster_out):
 
  #Extract coordinates and projection info from the target file
  ds = gdal.Open(raster_template)
+
+def write_raster(raster_in,raster_out,data):
+
+ #Extract coordinates and projection info from the target file
+ ds = gdal.Open(raster_in)
  gt = ds.GetGeoTransform()
  cols = ds.RasterXSize
  rows = ds.RasterYSize
@@ -95,6 +103,10 @@ def raster2raster(raster_template,raster_in,raster_out):
  proj4 = srs.ExportToProj4()
 
  #Regrid the raster
+ driver = gdal.GetDriverByName('GTiff')
+ #Create file
+ ds_out = driver.Create(raster_out,cols,rows,1,gdal.GDT_Float32)
+ #Set geo information
  minx = gt[0]
  miny = gt[3]+rows*gt[5]
  maxx = gt[0]+cols*gt[1]
@@ -103,3 +115,22 @@ def raster2raster(raster_template,raster_in,raster_out):
 
  return
 
+def retrieve_metadata(raster):
+
+ metadata = {}
+ #Extract coordinates and projection
+ ds = gdal.Open(raster)
+ gt = ds.GetGeoTransform()
+ cols = ds.RasterXSize
+ rows = ds.RasterYSize
+ srs = osgeo.osr.SpatialReference()
+ srs.ImportFromWkt(ds.GetProjection())
+ metadata['proj4'] = srs.ExportToProj4()
+ metadata['minx'] = gt[0]
+ metadata['miny'] = gt[3]+rows*gt[5]
+ metadata['maxx'] = gt[0]+cols*gt[1]
+ metadata['maxy'] = gt[3]
+ metadata['resx'] = gt[1]
+ metadata['resy'] = gt[5]
+
+ return metadata
