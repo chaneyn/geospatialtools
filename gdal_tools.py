@@ -1,4 +1,6 @@
 import gdal
+import osgeo
+import os
 from osgeo import osr
 import numpy as np
 
@@ -78,6 +80,26 @@ def shapefile2raster(raster_in,shp_in,raster_out,workspace,field):
  maxy = gt[3]
  os.system('gdal_rasterize -init -9999 -a %s -te %.16f %.16f %.16f %.16f -tr %.16f %.16f %s %s' % (field,minx,miny,maxx,maxy,gt[1],gt[5],shp_out,raster_out))
  os.system('rm -r %s' % shp_out)
+
+ return
+
+def raster2raster(raster_template,raster_in,raster_out):
+
+ #Extract coordinates and projection info from the target file
+ ds = gdal.Open(raster_template)
+ gt = ds.GetGeoTransform()
+ cols = ds.RasterXSize
+ rows = ds.RasterYSize
+ srs = osgeo.osr.SpatialReference()
+ srs.ImportFromWkt(ds.GetProjection())
+ proj4 = srs.ExportToProj4()
+
+ #Regrid the raster
+ minx = gt[0]
+ miny = gt[3]+rows*gt[5]
+ maxx = gt[0]+cols*gt[1]
+ maxy = gt[3]
+ os.system("gdalwarp -overwrite -t_srs '%s' --config GDAL_CACHEMAX 5000 -te %.16f %.16f %.16f %.16f -tr %.16f %.16f %s %s" % (proj4,minx,miny,maxx,maxy,gt[1],gt[5],raster_in,raster_out))
 
  return
 
