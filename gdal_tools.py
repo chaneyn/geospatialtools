@@ -28,6 +28,7 @@ def read_raster(file):
 
  #Read in the raster
  dataset = gdal.Open(file)
+ print dataset
 
  #Get dimensons
  nx = dataset.RasterXSize
@@ -132,5 +133,9 @@ def retrieve_metadata(raster):
  metadata['maxy'] = gt[3]
  metadata['resx'] = gt[1]
  metadata['resy'] = gt[5]
+ metadata['gt'] = gt
+ metadata['nx'] = cols
+ metadata['ny'] = rows
+ metadata['projection'] = ds.GetProjection()
 
  return metadata
