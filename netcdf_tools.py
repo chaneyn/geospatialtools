@@ -71,8 +71,8 @@ def Create_NETCDF_File(dims,file,vars,vars_info,tinitial,tstep,nt):
  minlon = dims['minlon']
  minlat = dims['minlat']
  undef = dims['undef']
- chunksizes = dims['chunksize']
- t = np.arange(0,nt)
+ #chunksizes = dims['chunksize']
+ if nt > 0:t = np.arange(0,nt)
 
  #Prepare the netcdf file
  #Create file
@@ -81,7 +81,7 @@ def Create_NETCDF_File(dims,file,vars,vars_info,tinitial,tstep,nt):
  #Define dimensions
  f.createDimension('lon',nlon)
  f.createDimension('lat',nlat)
- f.createDimension('t',len(t))
+ if nt > 0:f.createDimension('t',len(t))
 
  #Longitude
  f.createVariable('lon','d',('lon',))
@@ -98,16 +98,18 @@ def Create_NETCDF_File(dims,file,vars,vars_info,tinitial,tstep,nt):
  f.variables['lat'].res = res
 
  #Time
- times = f.createVariable('t','d',('t',))
- f.variables['t'][:] = t
- f.variables['t'].units = '%s since %04d-%02d-%02d %02d:00:00.0' % (tstep,tinitial.year,tinitial.month,tinitial.day,tinitial.hour)
- f.variables['t'].long_name = 'Time'
+ if nt > 0:
+  times = f.createVariable('t','d',('t',))
+  f.variables['t'][:] = t
+  f.variables['t'].units = '%s since %04d-%02d-%02d %02d:00:00.0' % (tstep,tinitial.year,tinitial.month,tinitial.day,tinitial.hour)
+  f.variables['t'].long_name = 'Time'
 
  #Data
  i = 0
  for var in vars:
-  f.createVariable(var,'f',('t','lat','lon'),fill_value=undef,
-                   chunksizes=chunksizes)
+  if nt > 0:f.createVariable(var,'f',('t','lat','lon'),fill_value=undef)
+                   #chunksizes=chunksizes)
+  else: f.createVariable(var,'f',('lat','lon'),fill_value=undef)
   f.variables[var].long_name = vars_info[i]
   i = i + 1
 
