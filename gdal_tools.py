@@ -28,7 +28,6 @@ def read_raster(file):
 
  #Read in the raster
  dataset = gdal.Open(file)
- print dataset
 
  #Get dimensons
  nx = dataset.RasterXSize
@@ -39,6 +38,25 @@ def read_raster(file):
 
  #Convert to numpy array
  data = band.ReadAsArray(0,0,nx,ny).astype(np.float32)
+
+ return data
+
+def read_raster_subarea(file,metadata):
+
+ #Read in the raster
+ dataset = gdal.Open(file)
+
+ #Get dimensons
+ nx = metadata['nx']#dataset.RasterXSize
+ ny = metadata['ny']#dataset.RasterYSize
+ ixmin = metadata['ixmin']
+ iymin = metadata['iymin']
+
+ #Retrieve band
+ band = dataset.GetRasterBand(1)
+
+ #Convert to numpy array
+ data = band.ReadAsArray(ixmin,iymin,nx,ny).astype(np.float32)
 
  return data
 
@@ -92,27 +110,15 @@ def raster2raster(raster_template,raster_in,raster_out):
  #Extract coordinates and projection info from the target file
  ds = gdal.Open(raster_template)
 
-def write_raster(raster_in,raster_out,data):
+def write_raster(file,metadata,data):
 
- #Extract coordinates and projection info from the target file
- ds = gdal.Open(raster_in)
- gt = ds.GetGeoTransform()
- cols = ds.RasterXSize
- rows = ds.RasterYSize
- srs = osgeo.osr.SpatialReference()
- srs.ImportFromWkt(ds.GetProjection())
- proj4 = srs.ExportToProj4()
-
- #Regrid the raster
  driver = gdal.GetDriverByName('GTiff')
- #Create file
- ds_out = driver.Create(raster_out,cols,rows,1,gdal.GDT_Float32)
- #Set geo information
- minx = gt[0]
- miny = gt[3]+rows*gt[5]
- maxx = gt[0]+cols*gt[1]
- maxy = gt[3]
- os.system("gdalwarp -overwrite -t_srs '%s' --config GDAL_CACHEMAX 5000 -te %.16f %.16f %.16f %.16f -tr %.16f %.16f %s %s" % (proj4,minx,miny,maxx,maxy,gt[1],gt[5],raster_in,raster_out))
+ ds_out = driver.Create(file,metadata['nx'],metadata['ny'],1,gdal.GDT_Float32)
+ ds_out.GetRasterBand(1).WriteArray(data.astype(np.float32))
+ ds_out.SetGeoTransform(metadata['gt'])
+ ds_out.SetProjection(metadata['projection'])
+ ds_out.GetRasterBand(1).SetNoDataValue(metadata['nodata'])
+ ds_out = None
 
  return
 
