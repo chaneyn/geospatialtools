@@ -198,8 +198,100 @@ subroutine fract_flow_mfd(iorg,jorg,i,j,dem,fract,p,positions,nx,ny,npos,res)
 
 end subroutine
 
-subroutine calculate_hillslopes()
+subroutine calculate_channels(area,threshold,fdir,channels,nx,ny)
 
- !Take the channel network and recurse
+ implicit none
+ integer,intent(in) :: nx,ny
+ real,intent(in) :: threshold
+ real,intent(in),dimension(nx,ny) :: area
+ integer,intent(in),dimension(nx,ny,2) :: fdir
+ integer,intent(out),dimension(nx,ny) :: channels
+ real,dimension(nx,ny) :: area_tmp
+ integer,dimension(nx,ny) :: mask
+ integer,dimension(2) :: placement
+ integer,dimension(:,:),allocatable :: positions
+ integer :: i,j,pos,cid,k,l,npos
+ npos = 8
+ allocate(positions(npos,2))
+
+ !Construct positions array
+ pos = 0
+ do k=-1,1
+  do l=-1,1
+   if ((k == 0) .and. (l == 0)) cycle
+   pos = pos + 1
+   positions(pos,1) = k
+   positions(pos,2) = l
+  enddo
+ enddo
+
+ !Define the channels mask
+ where (area .gt. threshold)
+  mask = 1
+ elsewhere
+  mask = 0
+ endwhere
+
+ !Differentiate the channels by segments
+ placement = maxloc(area)
+ i = placement(1)
+ j = placement(2)
+ cid = 1
+ !Set the channel id
+ if (mask(i,j) .eq. 1) channels(i,j) = cid
+ !Go upstream
+ call channels_upstream(i,j,fdir,channels,positions,nx,ny,cid,npos,mask)
+
+end subroutine
+
+subroutine channels_upstream(i,j,fdir,channels,positions,nx,ny,cid,npos,mask)
+
+ implicit none
+ integer,intent(in) :: npos,i,j,nx,ny
+ integer,intent(in) :: positions(npos,2),fdir(nx,ny,2),mask(nx,ny)
+ integer,intent(inout) :: cid,channels(nx,ny)
+ integer :: inew,jnew,count,ipos
+
+ !Determine how many cells flow into this cell 
+ count = 0
+ do ipos=1,npos
+  inew = i+positions(ipos,1)
+  jnew = j+positions(ipos,2)
+  if ((inew .lt. 1) .or. (jnew .lt. 1) .or. (inew .gt. nx) .or. (jnew .gt.ny))cycle
+  if ((fdir(inew,jnew,1) .eq. i) .and. (fdir(inew,jnew,2) .eq. j))then
+   if (mask(inew,jnew) .eq. 1) then
+    count = count + 1
+   endif
+  endif
+ enddo
+ !Decide the path to take
+ !1.Only one upstream cell
+ if (count .eq. 1)then 
+  do ipos=1,npos
+   inew = i+positions(ipos,1)
+   jnew = j+positions(ipos,2)
+   if ((inew.lt.1).or.(jnew.lt.1).or.(inew.gt.nx).or.(jnew.gt.ny)) cycle
+   if ((fdir(inew,jnew,1) .eq. i) .and. (fdir(inew,jnew,2) .eq. j))then
+    if (mask(inew,jnew) .eq. 1) then
+     channels(inew,jnew) = cid
+     call channels_upstream(inew,jnew,fdir,channels,positions,nx,ny,cid,npos,mask)
+    endif
+   endif
+  enddo
+ !2.More than one upstream cell
+ elseif (count .gt. 1)then
+  do ipos=1,npos
+   inew = i+positions(ipos,1)
+   jnew = j+positions(ipos,2)
+   if ((inew.lt.1).or.(jnew.lt.1).or.(inew.gt.nx).or.(jnew.gt.ny)) cycle
+   if ((fdir(inew,jnew,1) .eq. i) .and. (fdir(inew,jnew,2) .eq. j))then
+    if (mask(inew,jnew) .eq. 1)then
+     cid = cid + 1
+     channels(inew,jnew) = cid
+     call channels_upstream(inew,jnew,fdir,channels,positions,nx,ny,cid,npos,mask)
+    endif
+   endif
+  enddo
+ endif
 
 end subroutine
