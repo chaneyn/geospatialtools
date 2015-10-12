@@ -26,6 +26,7 @@ subroutine calculate_d8_acc(dem,res,area,fdir,nx,ny)
  !get flow direction map
  do i=1,nx
   do j=1,ny
+   slopes = 0.0
    do pos=1,npos
     k = positions(pos,1)
     l = positions(pos,2)
@@ -42,6 +43,8 @@ subroutine calculate_d8_acc(dem,res,area,fdir,nx,ny)
     tmp = maxloc(slopes)
     fdir(i,j,1) = i+positions(tmp(1),1)
     fdir(i,j,2) = j+positions(tmp(1),2)
+   else
+    fdir(i,j,:) = -9999
    endif
   enddo
  enddo
@@ -315,6 +318,57 @@ subroutine channels_upstream(i,j,fdir,channels,positions,nx,ny,cid,npos,mask)
     endif
    endif
   enddo
+ endif
+
+end subroutine
+
+subroutine delineate_basins(channels,basins,mask,fdir,nx,ny)
+
+ implicit none
+ integer,intent(in) :: nx,ny
+ integer,intent(in) :: channels(nx,ny),mask(nx,ny),fdir(nx,ny,2)
+ integer,intent(out) :: basins(nx,ny)
+ integer :: i,j,basin_id
+
+ !Initialize the basin delineation to the channel network (everythin else 0)
+ basins = channels
+
+ !Iterate cell by cell
+ do i=1,nx
+  print*,i
+  do j=1,ny
+   !Only work on this cell if the basin id is unknown and the mask is positive
+   if ((basins(i,j) .eq. 0) .and. (mask(i,j) .ge. 1)) then
+    !Find the id
+    call determine_basin_id(i,j,basins,basin_id,fdir,mask,nx,ny)
+   endif
+  enddo
+ enddo
+ !Go downstream to find the correct id
+ !When it reaches a value then stop recursing
+ !Clean up the "lost ones"
+
+end subroutine
+
+recursive subroutine determine_basin_id(i,j,basins,basin_id,fdir,mask,nx,ny)
+
+ implicit none
+ integer,intent(in) :: i,j,nx,ny,fdir(nx,ny,2)
+ integer,intent(inout) :: basin_id,basins(nx,ny),mask(nx,ny)
+ integer :: inew,jnew
+ basin_id = 0
+ !Determine which is way down
+ inew = fdir(i,j,1)
+ jnew = fdir(i,j,2)
+ if ((inew.lt.1).or.(jnew.lt.1).or.(inew.gt.nx).or.(jnew.gt.ny))return
+ if (mask(i,j) .eq. 0)return
+ !Figure out if downhill has a value if not then recurse. If it does then
+ if (basins(inew,jnew) .gt. 0)then
+  basin_id = basins(inew,jnew)
+  basins(i,j) = basin_id
+ else
+  call determine_basin_id(inew,jnew,basins,basin_id,fdir,mask,nx,ny)
+  basins(i,j) = basin_id
  endif
 
 end subroutine
