@@ -198,21 +198,24 @@ subroutine fract_flow_mfd(iorg,jorg,i,j,dem,fract,p,positions,nx,ny,npos,res)
 
 end subroutine
 
-subroutine calculate_channels(area,threshold,fdir,channels,nx,ny)
+subroutine calculate_channels(area_in,threshold,fdir,channels,nx,ny)
 
  implicit none
  integer,intent(in) :: nx,ny
  real,intent(in) :: threshold
- real,intent(in),dimension(nx,ny) :: area
+ real,intent(in),dimension(nx,ny) :: area_in
  integer,intent(in),dimension(nx,ny,2) :: fdir
  integer,intent(out),dimension(nx,ny) :: channels
- real,dimension(nx,ny) :: area_tmp
+ real,dimension(nx,ny) :: area
  integer,dimension(nx,ny) :: mask
  integer,dimension(2) :: placement
  integer,dimension(:,:),allocatable :: positions
  integer :: i,j,pos,cid,k,l,npos
+ logical :: bool
  npos = 8
  allocate(positions(npos,2))
+ !Copy the area array
+ area = area_in
 
  !Construct positions array
  pos = 0
@@ -233,14 +236,32 @@ subroutine calculate_channels(area,threshold,fdir,channels,nx,ny)
  endwhere
 
  !Differentiate the channels by segments
- placement = maxloc(area)
- i = placement(1)
- j = placement(2)
  cid = 1
- !Set the channel id
- if (mask(i,j) .eq. 1) channels(i,j) = cid
- !Go upstream
- call channels_upstream(i,j,fdir,channels,positions,nx,ny,cid,npos,mask)
+ bool = .False.
+ do while (bool .eqv. .False.)
+  
+  !Determine if there are still are cells
+  if (maxval(mask) .eq. 0) bool = .True.
+
+  !Maskout the area
+  where (mask .eq. 0) 
+   area = 0
+  endwhere
+
+  !Find the highest accumulation area
+  placement = maxloc(area)
+  i = placement(1)
+  j = placement(2)
+  !Set the channel id
+  if (mask(i,j) .eq. 1)then
+   mask(i,j) = 0
+   channels(i,j) = cid
+  endif
+
+  !Go upstream
+  call channels_upstream(i,j,fdir,channels,positions,nx,ny,cid,npos,mask)
+
+ enddo
 
 end subroutine
 
@@ -248,8 +269,8 @@ subroutine channels_upstream(i,j,fdir,channels,positions,nx,ny,cid,npos,mask)
 
  implicit none
  integer,intent(in) :: npos,i,j,nx,ny
- integer,intent(in) :: positions(npos,2),fdir(nx,ny,2),mask(nx,ny)
- integer,intent(inout) :: cid,channels(nx,ny)
+ integer,intent(in) :: positions(npos,2),fdir(nx,ny,2)
+ integer,intent(inout) :: cid,channels(nx,ny),mask(nx,ny)
  integer :: inew,jnew,count,ipos
 
  !Determine how many cells flow into this cell 
@@ -273,6 +294,7 @@ subroutine channels_upstream(i,j,fdir,channels,positions,nx,ny,cid,npos,mask)
    if ((inew.lt.1).or.(jnew.lt.1).or.(inew.gt.nx).or.(jnew.gt.ny)) cycle
    if ((fdir(inew,jnew,1) .eq. i) .and. (fdir(inew,jnew,2) .eq. j))then
     if (mask(inew,jnew) .eq. 1) then
+     mask(inew,jnew) = 0
      channels(inew,jnew) = cid
      call channels_upstream(inew,jnew,fdir,channels,positions,nx,ny,cid,npos,mask)
     endif
@@ -287,6 +309,7 @@ subroutine channels_upstream(i,j,fdir,channels,positions,nx,ny,cid,npos,mask)
    if ((fdir(inew,jnew,1) .eq. i) .and. (fdir(inew,jnew,2) .eq. j))then
     if (mask(inew,jnew) .eq. 1)then
      cid = cid + 1
+     mask(inew,jnew) = 0
      channels(inew,jnew) = cid
      call channels_upstream(inew,jnew,fdir,channels,positions,nx,ny,cid,npos,mask)
     endif
