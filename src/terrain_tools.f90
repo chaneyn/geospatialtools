@@ -335,7 +335,6 @@ subroutine delineate_basins(channels,basins,mask,fdir,nx,ny)
 
  !Iterate cell by cell
  do i=1,nx
-  print*,i
   do j=1,ny
    !Only work on this cell if the basin id is unknown and the mask is positive
    if ((basins(i,j) .eq. 0) .and. (mask(i,j) .ge. 1)) then
