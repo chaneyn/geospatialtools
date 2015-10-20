@@ -268,7 +268,7 @@ subroutine calculate_channels(area_in,threshold,fdir,channels,nx,ny)
 
 end subroutine
 
-subroutine channels_upstream(i,j,fdir,channels,positions,nx,ny,cid,npos,mask)
+recursive subroutine channels_upstream(i,j,fdir,channels,positions,nx,ny,cid,npos,mask)
 
  implicit none
  integer,intent(in) :: npos,i,j,nx,ny
