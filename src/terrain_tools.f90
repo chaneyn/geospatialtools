@@ -269,7 +269,7 @@ subroutine calculate_channels(area_in,threshold,basin_threshold,fdir,channels,nx
 
 end subroutine
 
-subroutine channels_upstream(i,j,fdir,channels,positions,nx,ny,cid,npos,&
+recursive subroutine channels_upstream(i,j,fdir,channels,positions,nx,ny,cid,npos,&
                              mask,basin_threshold,area)
 
  implicit none

@@ -7,7 +7,7 @@ os.chdir(cwd)
 
 #Write the libraries
 from distutils.core import setup
-setup(name='geospatialstools',
+setup(name='geospatialtools',
       version='1.0',
       package_dir={'geospatialtools': 'libraries'},
       packages=['geospatialtools'],
