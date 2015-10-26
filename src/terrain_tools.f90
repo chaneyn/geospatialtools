@@ -201,11 +201,11 @@ subroutine fract_flow_mfd(iorg,jorg,i,j,dem,fract,p,positions,nx,ny,npos,res)
 
 end subroutine
 
-subroutine calculate_channels(area_in,threshold,fdir,channels,nx,ny)
+subroutine calculate_channels(area_in,threshold,basin_threshold,fdir,channels,nx,ny)
 
  implicit none
  integer,intent(in) :: nx,ny
- real,intent(in) :: threshold
+ real,intent(in) :: threshold,basin_threshold
  real,intent(in),dimension(nx,ny) :: area_in
  integer,intent(in),dimension(nx,ny,2) :: fdir
  integer,intent(out),dimension(nx,ny) :: channels
@@ -256,25 +256,30 @@ subroutine calculate_channels(area_in,threshold,fdir,channels,nx,ny)
   i = placement(1)
   j = placement(2)
   !Set the channel id
-  if (mask(i,j) .eq. 1)then
-   mask(i,j) = 0
+  if ((mask(i,j) .eq. 1) .and. (area(i,j) .ge. basin_threshold))then
    channels(i,j) = cid
   endif
+  mask(i,j) = 0
 
   !Go upstream
-  call channels_upstream(i,j,fdir,channels,positions,nx,ny,cid,npos,mask)
+  call channels_upstream(i,j,fdir,channels,positions,nx,ny,cid,npos,&
+                         mask,basin_threshold,area)
 
  enddo
 
 end subroutine
 
-subroutine channels_upstream(i,j,fdir,channels,positions,nx,ny,cid,npos,mask)
+subroutine channels_upstream(i,j,fdir,channels,positions,nx,ny,cid,npos,&
+                             mask,basin_threshold,area)
 
  implicit none
  integer,intent(in) :: npos,i,j,nx,ny
  integer,intent(in) :: positions(npos,2),fdir(nx,ny,2)
+ real,intent(in) :: basin_threshold,area(nx,ny)
  integer,intent(inout) :: cid,channels(nx,ny),mask(nx,ny)
- integer :: inew,jnew,count,ipos
+ integer :: inew,jnew,count,ipos,cid_org
+ !Memorize the channel id
+ cid_org = cid
 
  !Determine how many cells flow into this cell 
  count = 0
@@ -284,13 +289,16 @@ subroutine channels_upstream(i,j,fdir,channels,positions,nx,ny,cid,npos,mask)
   if ((inew .lt. 1) .or. (jnew .lt. 1) .or. (inew .gt. nx) .or. (jnew .gt.ny))cycle
   if ((fdir(inew,jnew,1) .eq. i) .and. (fdir(inew,jnew,2) .eq. j))then
    if (mask(inew,jnew) .eq. 1) then
-    count = count + 1
+    !Make sure we are above the threshold
+    if (area(inew,jnew) .ge. basin_threshold) then
+     count = count + 1
+    endif
    endif
   endif
  enddo
  !Decide the path to take
  !1.Only one upstream cell
- if (count .eq. 1)then 
+ if (count .le. 1)then 
   do ipos=1,npos
    inew = i+positions(ipos,1)
    jnew = j+positions(ipos,2)
@@ -298,8 +306,9 @@ subroutine channels_upstream(i,j,fdir,channels,positions,nx,ny,cid,npos,mask)
    if ((fdir(inew,jnew,1) .eq. i) .and. (fdir(inew,jnew,2) .eq. j))then
     if (mask(inew,jnew) .eq. 1) then
      mask(inew,jnew) = 0
-     channels(inew,jnew) = cid
-     call channels_upstream(inew,jnew,fdir,channels,positions,nx,ny,cid,npos,mask)
+     channels(inew,jnew) = channels(i,j)
+     call channels_upstream(inew,jnew,fdir,channels,positions,nx,ny,&
+                             cid,npos,mask,basin_threshold,area)
     endif
    endif
   enddo
@@ -310,11 +319,19 @@ subroutine channels_upstream(i,j,fdir,channels,positions,nx,ny,cid,npos,mask)
    jnew = j+positions(ipos,2)
    if ((inew.lt.1).or.(jnew.lt.1).or.(inew.gt.nx).or.(jnew.gt.ny)) cycle
    if ((fdir(inew,jnew,1) .eq. i) .and. (fdir(inew,jnew,2) .eq. j))then
-    if (mask(inew,jnew) .eq. 1)then
-     cid = cid + 1
-     mask(inew,jnew) = 0
-     channels(inew,jnew) = cid
-     call channels_upstream(inew,jnew,fdir,channels,positions,nx,ny,cid,npos,mask)
+    if (mask(inew,jnew) .eq. 1) then
+     if (area(inew,jnew) .ge. basin_threshold)then
+      cid = cid + 1
+      mask(inew,jnew) = 0
+      channels(inew,jnew) = cid
+      call channels_upstream(inew,jnew,fdir,channels,positions,nx,ny,&
+                             cid,npos,mask,basin_threshold,area)
+     else
+      mask(inew,jnew) = 0
+      channels(inew,jnew) = cid_org
+      call channels_upstream(inew,jnew,fdir,channels,positions,nx,ny,&
+                             cid_org,npos,mask,basin_threshold,area)
+     endif
     endif
    endif
   enddo
