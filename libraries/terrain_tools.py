@@ -48,11 +48,23 @@ def compute_basin_delineation_nbasins(dem,mask,res,nbasins):
 
 def define_hrus(basins,dem,channels):
 
- nbins_dem = 100
- min_nbins = 3
+ nbins = 10
  #Define the unique basins
  ubasins = np.unique(basins)[1::]
- #Create the bins
- print ubasins
+ tmp = np.copy(basins)
+ tmp[:] = 0
+ #Create the dem bins
+ for basin in ubasins:
+  smask = basins == basin
+  #Bin the elevation data
+  (hist,bins) = np.histogram(dem[smask],bins=nbins)
+  #Place the data
+  for ibin in xrange(nbins):
+   smask = (basins == basin) & (dem >= bins[ibin]) & (dem < bins[ibin+1])
+   tmp[smask] = np.mean(dem[smask])
+ import matplotlib.pyplot as plt
+ tmp = np.ma.masked_array(tmp,tmp==0)
+ plt.imshow(tmp)
+ plt.show()
 
  return 

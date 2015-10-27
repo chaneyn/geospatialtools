@@ -388,3 +388,112 @@ recursive subroutine determine_basin_id(i,j,basins,basin_id,fdir,mask,nx,ny)
  endif
 
 end subroutine
+
+subroutine delineate_hillslopes(channels,area,fdir,hillslopes,nx,ny)
+
+ implicit none
+ integer,intent(in) :: nx,ny
+ integer,intent(in) :: channels(nx,ny),fdir(nx,ny,2)
+ real,intent(in) :: area(nx,ny)
+ integer,intent(out) :: hillslopes(nx,ny)
+ integer,dimension(2) :: placement
+ integer,dimension(:,:),allocatable :: positions
+ integer :: i,j,ipos,pos,k,l,npos,inew,jnew
+ integer :: channel_count,hillslope_id
+ npos = 8
+ allocate(positions(npos,2))
+
+ !Construct positions array
+ pos = 0
+ do k=-1,1
+  do l=-1,1
+   if ((k == 0) .and. (l == 0)) cycle
+   pos = pos + 1
+   positions(pos,1) = k
+   positions(pos,2) = l
+  enddo
+ enddo
+
+ !Calculate the position of the maximum area
+ placement = maxloc(area)
+ i = placement(1)
+ j = placement(2)
+ 
+ !Initialize channel count
+ channel_count = 1
+
+ !Initialize the hillslope_id
+ hillslope_id = 1
+
+ !Look at the surrounding cells. Decide what to do...
+ do ipos=1,npos
+  inew = i+positions(ipos,1)
+  jnew = j+positions(ipos,2)
+  if ((fdir(inew,jnew,1) .eq. i) .and. (fdir(inew,jnew,2) .eq. j))then
+   !If it is a channel then move upstream
+   if (channels(inew,jnew) .gt. 0)then
+    call move_upstream(inew,jnew,hillslope_id,hillslopes,fdir,&
+                       channels,channel_count,nx,ny,positions)
+   !If it not a channel then recurse to define the id
+   else
+    !Recurse to place hillslope id 
+    call define_hillslope_id(inew,jnew,hillslope_id,hillslopes,fdir,nx,ny,positions)
+   endif
+  endif
+ enddo
+
+end subroutine
+
+recursive subroutine move_upstream(i,j,hillslope_id,hillslopes,fdir,&
+                                   channels,channel_count,nx,ny,positions)
+
+ implicit none
+ integer,intent(in) :: i,j,nx,ny,positions(8,2)
+ integer,intent(in) :: channels(nx,ny),fdir(nx,ny,2)
+ integer,intent(inout) :: hillslopes(nx,ny),hillslope_id,channel_count
+ integer :: inew,jnew,ipos,npos=8
+ !Update the count
+ channel_count = channel_count + 1
+ !If it exceeds a threshold then update the hillslope id
+ if (mod(channel_count,100) .eq. 0)then
+  hillslope_id = hillslope_id + 1
+  !channel_count = 1
+ endif
+ !Look at the surrounding cells. Decide what to do...
+ do ipos=1,npos
+  inew = i+positions(ipos,1)
+  jnew = j+positions(ipos,2)
+  if ((fdir(inew,jnew,1) .eq. i) .and. (fdir(inew,jnew,2) .eq. j))then
+   !If it is a channel then move upstream
+   if (channels(inew,jnew) .gt. 0)then
+    call move_upstream(inew,jnew,hillslope_id,hillslopes,fdir,&
+                       channels,channel_count,nx,ny,positions)
+   !If it not a channel then recurse to define the id
+   else
+    !Recurse to place hillslope id 
+    call define_hillslope_id(inew,jnew,hillslope_id,hillslopes,fdir,nx,ny,positions)
+   endif
+  endif
+ enddo
+
+end subroutine
+
+recursive subroutine define_hillslope_id(i,j,hillslope_id,hillslopes,fdir,nx,ny,positions)
+
+ implicit none
+ integer,intent(in) :: i,j,nx,ny,fdir(nx,ny,2),positions(8,2)
+ integer,intent(inout) :: hillslope_id,hillslopes(nx,ny)
+ integer :: inew,jnew,ipos,npos=8
+ !Define the id
+ hillslopes(i,j) = hillslope_id
+ !Determine the cells that flow into this cell
+ do ipos=1,npos
+  inew = i+positions(ipos,1)
+  jnew = j+positions(ipos,2)
+  if ((fdir(inew,jnew,1) .eq. i) .and. (fdir(inew,jnew,2) .eq. j))then
+   !Recurse to place hillslope id 
+   call define_hillslope_id(inew,jnew,hillslope_id,hillslopes,fdir,nx,ny,positions)
+  endif
+ enddo
+
+end subroutine
