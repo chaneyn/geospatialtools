@@ -428,6 +428,15 @@ subroutine delineate_hillslopes(channels,area,fdir,hillslopes,nx,ny)
  !Figure out the origin position
  iold = fdir(i,j,1)
  jold = fdir(i,j,2)
+ do ipos=1,npos
+  inew = i+positions(ipos,1)
+  jnew = j+positions(ipos,2)
+  if ((inew .eq. iold) .and. (jnew .eq. jold))then
+   ipos_old = ipos
+  endif
+ enddo
+
+ !Define the positions (clock-wise orientation)
  positions(:,:) = -9999
  positions(1,1:2) = (/-1,0/)
  positions(2,1:2) = (/-1,-1/)
@@ -471,6 +480,9 @@ subroutine delineate_hillslopes(channels,area,fdir,hillslopes,nx,ny)
    endif
   endif
  enddo
+ 
+ !Cleanup hillslopes
+ call cleanup_hillslopes(hillslopes,nx,ny)
 
 end subroutine
 
@@ -487,12 +499,6 @@ recursive subroutine move_upstream(i,j,hillslope_id,hillslopes,fdir,&
  !Initialize channel count
  channel_count = 0
  
- !If we are on a different channel link then update
- !if (channels(i,j) .ne. cid)then
- ! cid = channels(i,j)
- ! hillslope_id = hillslope_id + 1
- !endif
-
  !Figure out the origin position
  do ipos=1,npos
   inew = i+positions(ipos,1)
@@ -584,11 +590,6 @@ recursive subroutine move_upstream(i,j,hillslope_id,hillslopes,fdir,&
   hillslope_id = hillslope_id + 1
  endif
 
- !If we are at a node then create another hillslope
- !if (channel_count .gt. 1)then
- ! hillslope_id = hillslope_id + 1
- !endif
-
 end subroutine
 
 recursive subroutine define_hillslope_id(i,j,hillslope_id,hillslopes,fdir,nx,ny,positions)
@@ -610,3 +611,96 @@ recursive subroutine define_hillslope_id(i,j,hillslope_id,hillslopes,fdir,nx,ny,
  enddo
 
 end subroutine
+
+subroutine calculate_hillslope_properties(hillslopes,dem,basins,res,nh,&
+           hillslopes_elevation,hillslopes_area,hillslopes_basin,&
+           nx,ny)
+
+ implicit none
+ integer,intent(in) :: nx,ny,hillslopes(nx,ny),nh,basins(nx,ny)
+ real,intent(in) :: dem(nx,ny),res
+ integer,intent(out) :: hillslopes_basin(nh)
+ real,intent(out) :: hillslopes_elevation(nh),hillslopes_area(nh)
+ integer :: hillslopes_count(nh)
+ integer :: i,j,hillslope
+
+ !Hillslope elevation
+ hillslopes_elevation = 0.0
+ hillslopes_count = 0
+ do i=1,nx
+  do j=1,ny
+   hillslope = hillslopes(i,j)
+   if (hillslope .gt. 0)then
+    hillslopes_elevation(hillslope) = hillslopes_elevation(hillslope) + dem(i,j)
+    hillslopes_count(hillslope) = hillslopes_count(hillslope) + 1
+   endif
+  enddo
+ enddo
+ hillslopes_elevation = hillslopes_elevation/hillslopes_count
+
+ !Hillslope area
+ hillslopes_area = res**2*hillslopes_count
+
+ !Corresponding subbasin
+ hillslopes_basin = 0
+ do i=1,nx
+  do j=1,ny
+   hillslope = hillslopes(i,j)
+   if (hillslope .gt. 0)then
+    hillslopes_basin(hillslope) = basins(i,j)
+   endif
+  enddo
+ enddo
+
+ !Convergence index
+
+end subroutine
+
+subroutine cleanup_hillslopes(hillslopes,nx,ny)
+
+ implicit none
+ integer,intent(in) :: nx,ny
+ integer,intent(inout) :: hillslopes(nx,ny)
+ integer,allocatable,dimension(:) :: hids,hcounts,mapping
+ integer :: hid,i,j
+
+ !Create array with hillslopes ids and count
+ allocate(hids(maxval(hillslopes)))
+ allocate(hcounts(size(hids)))
+ allocate(mapping(size(hids)))
+ hcounts = 0
+ mapping = 0
+ do i=1,size(hids)
+  hids(i) = i
+ enddo
+
+ !Count the hillslopes 
+ do i=1,nx
+  do j=1,ny
+   if (hillslopes(i,j) .gt. 0)then
+    hid = hillslopes(i,j)
+    hcounts(hid) = hcounts(hid) + 1
+   endif
+  enddo
+ enddo
+
+ !Assign mapping
+ hid = 0
+ do i=1,size(hids)
+  if (hcounts(i) .gt. 0)then
+   hid = hid + 1
+   mapping(i) = hid
+  endif
+ enddo
+
+ !Assign new hillslope ids
+ do i=1,nx
+  do j=1,ny
+   if (hillslopes(i,j) .gt. 0)then
+    hillslopes(i,j) = mapping(hillslopes(i,j))
+   endif
+  enddo
+ enddo
+
+end subroutine
+   
