@@ -486,11 +486,9 @@ recursive subroutine move_upstream(i,j,hillslope_id,hillslopes,fdir,&
  !Update the count
  channel_count = channel_count + 1
  !If it exceeds a threshold then update the hillslope id
- if (mod(channel_count,20) .eq. 0)then
+ if (mod(channel_count,100) .eq. 0)then
   hillslope_id = hillslope_id + 1
-  !channel_count = 1
  endif
- !if (channel_count .eq. 2)return
 
  !Figure out the origin position
  do ipos=1,npos
@@ -510,6 +508,12 @@ recursive subroutine move_upstream(i,j,hillslope_id,hillslopes,fdir,&
    if (channels(inew,jnew) .gt. 0)then
     call move_upstream(inew,jnew,hillslope_id,hillslopes,fdir,&
                        channels,channel_count,nx,ny,positions,i,j)
+    !Update the count
+    channel_count = channel_count + 1
+    !If it exceeds a threshold then update the hillslope id
+    if (mod(channel_count,100) .eq. 0)then
+     hillslope_id = hillslope_id + 1
+    endif
    !If it not a channel then recurse to define the id
    else
     !Recurse to place hillslope id 
@@ -527,6 +531,12 @@ recursive subroutine move_upstream(i,j,hillslope_id,hillslopes,fdir,&
    if (channels(inew,jnew) .gt. 0)then
     call move_upstream(inew,jnew,hillslope_id,hillslopes,fdir,&
                        channels,channel_count,nx,ny,positions,i,j)
+    !Update the count
+    channel_count = channel_count + 1
+    !If it exceeds a threshold then update the hillslope id
+    if (mod(channel_count,100) .eq. 0)then
+     hillslope_id = hillslope_id + 1
+    endif
    !If it not a channel then recurse to define the id
    else
     !Recurse to place hillslope id 
