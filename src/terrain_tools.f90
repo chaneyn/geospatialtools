@@ -389,11 +389,11 @@ recursive subroutine determine_basin_id(i,j,basins,basin_id,fdir,mask,nx,ny)
 
 end subroutine
 
-subroutine delineate_hillslopes(channels,area,fdir,hillslopes,nx,ny)
+subroutine delineate_hillslopes(channels,area,fdir,mask,hillslopes,nx,ny)
 
  implicit none
  integer,intent(in) :: nx,ny
- integer,intent(in) :: channels(nx,ny),fdir(nx,ny,2)
+ integer,intent(in) :: channels(nx,ny),fdir(nx,ny,2),mask(nx,ny)
  real,intent(in) :: area(nx,ny)
  integer,intent(out) :: hillslopes(nx,ny)
  integer,dimension(2) :: placement
@@ -455,11 +455,12 @@ subroutine delineate_hillslopes(channels,area,fdir,hillslopes,nx,ny)
    !If it is a channel then move upstream
    if (channels(inew,jnew) .gt. 0)then
     call move_upstream(inew,jnew,hillslope_id,hillslopes,fdir,&
-                       channels,nx,ny,positions,i,j,cid)
+                       channels,nx,ny,positions,i,j,cid,mask)
    !If it not a channel then recurse to define the id
    else
     !Recurse to place hillslope id 
-    call define_hillslope_id(inew,jnew,hillslope_id,hillslopes,fdir,nx,ny,positions)
+    call define_hillslope_id(inew,jnew,hillslope_id,hillslopes,&
+                             fdir,nx,ny,positions,mask)
    endif
   endif
  enddo
@@ -472,11 +473,12 @@ subroutine delineate_hillslopes(channels,area,fdir,hillslopes,nx,ny)
    !If it is a channel then move upstream
    if (channels(inew,jnew) .gt. 0)then
     call move_upstream(inew,jnew,hillslope_id,hillslopes,fdir,&
-                       channels,nx,ny,positions,i,j,cid)
+                       channels,nx,ny,positions,i,j,cid,mask)
    !If it not a channel then recurse to define the id
    else
     !Recurse to place hillslope id 
-    call define_hillslope_id(inew,jnew,hillslope_id,hillslopes,fdir,nx,ny,positions)
+    call define_hillslope_id(inew,jnew,hillslope_id,hillslopes,&
+                             fdir,nx,ny,positions,mask)
    endif
   endif
  enddo
@@ -488,11 +490,11 @@ end subroutine
 
 recursive subroutine move_upstream(i,j,hillslope_id,hillslopes,fdir,&
                                    channels,nx,ny,positions,&
-                                   iold,jold,cid)
+                                   iold,jold,cid,mask)
 
  implicit none
  integer,intent(in) :: i,j,nx,ny,positions(8,2)
- integer,intent(in) :: channels(nx,ny),fdir(nx,ny,2)
+ integer,intent(in) :: channels(nx,ny),fdir(nx,ny,2),mask(nx,ny)
  integer,intent(inout) :: hillslopes(nx,ny),hillslope_id,cid
  integer :: inew,jnew,ipos,npos=8,iold,jold,ipos_old,channel_count
 
@@ -534,7 +536,7 @@ recursive subroutine move_upstream(i,j,hillslope_id,hillslopes,fdir,&
      hillslope_id = hillslope_id + 1
     endif
     call move_upstream(inew,jnew,hillslope_id,hillslopes,fdir,&
-                       channels,nx,ny,positions,i,j,cid)
+                       channels,nx,ny,positions,i,j,cid,mask)
     !If we are on a different channel link then update
     if (channel_count .gt. 1)then
      cid = channels(i,j)
@@ -543,7 +545,8 @@ recursive subroutine move_upstream(i,j,hillslope_id,hillslopes,fdir,&
    !If it not a channel then recurse to define the id
    else
     !Recurse to place hillslope id 
-    call define_hillslope_id(inew,jnew,hillslope_id,hillslopes,fdir,nx,ny,positions)
+    call define_hillslope_id(inew,jnew,hillslope_id,hillslopes,&
+                             fdir,nx,ny,positions,mask)
    endif
   endif
  enddo
@@ -561,7 +564,7 @@ recursive subroutine move_upstream(i,j,hillslope_id,hillslopes,fdir,&
      hillslope_id = hillslope_id + 1
     endif
     call move_upstream(inew,jnew,hillslope_id,hillslopes,fdir,&
-                       channels,nx,ny,positions,i,j,cid)
+                       channels,nx,ny,positions,i,j,cid,mask)
     !If we are on a different channel link then update
     if (channel_count .gt. 1) then
      cid = channels(i,j)
@@ -570,7 +573,8 @@ recursive subroutine move_upstream(i,j,hillslope_id,hillslopes,fdir,&
    !If it not a channel then recurse to define the id
    else
     !Recurse to place hillslope id 
-    call define_hillslope_id(inew,jnew,hillslope_id,hillslopes,fdir,nx,ny,positions)
+    call define_hillslope_id(inew,jnew,hillslope_id,hillslopes,&
+                             fdir,nx,ny,positions,mask)
    endif
   endif
  enddo
@@ -583,7 +587,8 @@ recursive subroutine move_upstream(i,j,hillslope_id,hillslopes,fdir,&
    jnew = j+positions(ipos,2)
    if ((fdir(inew,jnew,1) .eq. i) .and. (fdir(inew,jnew,2) .eq. j))then
     !Recurse to place hillslope id 
-    call define_hillslope_id(inew,jnew,hillslope_id,hillslopes,fdir,nx,ny,positions)
+    call define_hillslope_id(inew,jnew,hillslope_id,hillslopes,&
+                             fdir,nx,ny,positions,mask)
    endif
   enddo
   !Update the hillslope id for the other side slope
@@ -592,12 +597,15 @@ recursive subroutine move_upstream(i,j,hillslope_id,hillslopes,fdir,&
 
 end subroutine
 
-recursive subroutine define_hillslope_id(i,j,hillslope_id,hillslopes,fdir,nx,ny,positions)
+recursive subroutine define_hillslope_id(i,j,hillslope_id,hillslopes,&
+                                         fdir,nx,ny,positions,mask)
 
  implicit none
- integer,intent(in) :: i,j,nx,ny,fdir(nx,ny,2),positions(8,2)
+ integer,intent(in) :: i,j,nx,ny,fdir(nx,ny,2),positions(8,2),mask(nx,ny)
  integer,intent(inout) :: hillslope_id,hillslopes(nx,ny)
  integer :: inew,jnew,ipos,npos=8
+ !Determine if the point is in the mask
+ if (mask(i,j) .eq. 0)return
  !Define the id
  hillslopes(i,j) = hillslope_id
  !Determine the cells that flow into this cell
@@ -606,7 +614,8 @@ recursive subroutine define_hillslope_id(i,j,hillslope_id,hillslopes,fdir,nx,ny,
   jnew = j+positions(ipos,2)
   if ((fdir(inew,jnew,1) .eq. i) .and. (fdir(inew,jnew,2) .eq. j))then
    !Recurse to place hillslope id 
-   call define_hillslope_id(inew,jnew,hillslope_id,hillslopes,fdir,nx,ny,positions)
+   call define_hillslope_id(inew,jnew,hillslope_id,hillslopes,fdir&
+                            ,nx,ny,positions,mask)
   endif
  enddo
 
