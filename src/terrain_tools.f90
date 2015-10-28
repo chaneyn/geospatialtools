@@ -399,7 +399,7 @@ subroutine delineate_hillslopes(channels,area,fdir,hillslopes,nx,ny)
  integer,dimension(2) :: placement
  integer,dimension(:,:),allocatable :: positions
  integer :: i,j,ipos,pos,k,l,npos,inew,jnew,iold,jold,ipos_old
- integer :: channel_count,hillslope_id
+ integer :: hillslope_id,cid
  npos = 8
  allocate(positions(npos,2))
 
@@ -418,12 +418,12 @@ subroutine delineate_hillslopes(channels,area,fdir,hillslopes,nx,ny)
  placement = maxloc(area)
  i = placement(1)
  j = placement(2)
- 
- !Initialize channel count
- channel_count = 1
 
  !Initialize the hillslope_id
  hillslope_id = 1
+
+ !Set the channel
+ cid = channels(i,j)
 
  !Figure out the origin position
  iold = fdir(i,j,1)
@@ -446,7 +446,7 @@ subroutine delineate_hillslopes(channels,area,fdir,hillslopes,nx,ny)
    !If it is a channel then move upstream
    if (channels(inew,jnew) .gt. 0)then
     call move_upstream(inew,jnew,hillslope_id,hillslopes,fdir,&
-                       channels,channel_count,nx,ny,positions,i,j)
+                       channels,nx,ny,positions,i,j,cid)
    !If it not a channel then recurse to define the id
    else
     !Recurse to place hillslope id 
@@ -463,7 +463,7 @@ subroutine delineate_hillslopes(channels,area,fdir,hillslopes,nx,ny)
    !If it is a channel then move upstream
    if (channels(inew,jnew) .gt. 0)then
     call move_upstream(inew,jnew,hillslope_id,hillslopes,fdir,&
-                       channels,channel_count,nx,ny,positions,i,j)
+                       channels,nx,ny,positions,i,j,cid)
    !If it not a channel then recurse to define the id
    else
     !Recurse to place hillslope id 
@@ -475,18 +475,21 @@ subroutine delineate_hillslopes(channels,area,fdir,hillslopes,nx,ny)
 end subroutine
 
 recursive subroutine move_upstream(i,j,hillslope_id,hillslopes,fdir,&
-                                   channels,channel_count,nx,ny,positions,&
-                                   iold,jold)
+                                   channels,nx,ny,positions,&
+                                   iold,jold,cid)
 
  implicit none
  integer,intent(in) :: i,j,nx,ny,positions(8,2)
  integer,intent(in) :: channels(nx,ny),fdir(nx,ny,2)
- integer,intent(inout) :: hillslopes(nx,ny),hillslope_id,channel_count
- integer :: inew,jnew,ipos,npos=8,iold,jold,ipos_old
- !Update the count
- channel_count = channel_count + 1
- !If it exceeds a threshold then update the hillslope id
- if (mod(channel_count,100) .eq. 0)then
+ integer,intent(inout) :: hillslopes(nx,ny),hillslope_id,cid
+ integer :: inew,jnew,ipos,npos=8,iold,jold,ipos_old,channel_count
+
+ !Initialize channel count
+ channel_count = 0
+ 
+ !If we are on a different channel link then update
+ if (channels(i,j) .ne. cid)then
+  cid = channels(i,j)
   hillslope_id = hillslope_id + 1
  endif
 
@@ -499,6 +502,8 @@ recursive subroutine move_upstream(i,j,hillslope_id,hillslopes,fdir,&
   endif
  enddo
 
+ !Determine if it is a node
+
  !Start from the downstream cell
  do ipos=ipos_old,npos
   inew = i+positions(ipos,1)
@@ -507,13 +512,14 @@ recursive subroutine move_upstream(i,j,hillslope_id,hillslopes,fdir,&
    !If it is a channel then move upstream
    if (channels(inew,jnew) .gt. 0)then
     call move_upstream(inew,jnew,hillslope_id,hillslopes,fdir,&
-                       channels,channel_count,nx,ny,positions,i,j)
-    !Update the count
-    channel_count = channel_count + 1
-    !If it exceeds a threshold then update the hillslope id
-    if (mod(channel_count,100) .eq. 0)then
+                       channels,nx,ny,positions,i,j,cid)
+    !If we are on a different channel link then update
+    if (channels(i,j) .ne. cid)then
+     cid = channels(i,j)
      hillslope_id = hillslope_id + 1
     endif
+    !Count how many channels we have gone up
+    channel_count = channel_count + 1
    !If it not a channel then recurse to define the id
    else
     !Recurse to place hillslope id 
@@ -530,13 +536,14 @@ recursive subroutine move_upstream(i,j,hillslope_id,hillslopes,fdir,&
    !If it is a channel then move upstream
    if (channels(inew,jnew) .gt. 0)then
     call move_upstream(inew,jnew,hillslope_id,hillslopes,fdir,&
-                       channels,channel_count,nx,ny,positions,i,j)
-    !Update the count
-    channel_count = channel_count + 1
-    !If it exceeds a threshold then update the hillslope id
-    if (mod(channel_count,100) .eq. 0)then
+                       channels,nx,ny,positions,i,j,cid)
+    !If we are on a different channel link then update
+    if (channels(i,j) .ne. cid) then
+     cid = channels(i,j)
      hillslope_id = hillslope_id + 1
     endif
+    !Count how many channels we have gone up
+    channel_count = channel_count + 1
    !If it not a channel then recurse to define the id
    else
     !Recurse to place hillslope id 
@@ -544,6 +551,21 @@ recursive subroutine move_upstream(i,j,hillslope_id,hillslopes,fdir,&
    endif
   endif
  enddo
+
+ !If we are at a terminal point then create own hillslope
+ if (channel_count == 0)then
+  hillslope_id = hillslope_id + 1
+  do ipos=1,npos
+   inew = i+positions(ipos,1)
+   jnew = j+positions(ipos,2)
+   if ((fdir(inew,jnew,1) .eq. i) .and. (fdir(inew,jnew,2) .eq. j))then
+    !Recurse to place hillslope id 
+    call define_hillslope_id(inew,jnew,hillslope_id,hillslopes,fdir,nx,ny,positions)
+   endif
+  enddo
+  !Update the hillslope id for the other side
+  hillslope_id = hillslope_id + 1
+ endif
 
 end subroutine
 
