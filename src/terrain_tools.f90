@@ -625,12 +625,13 @@ subroutine calculate_hillslope_properties(hillslopes,dem,basins,res,nh,&
            latitude,longitude,&
            hillslopes_elevation,hillslopes_area,hillslopes_basin,&
            hillslopes_latitude,hillslopes_longitude,hillslopes_range,&
+           hillslopes_id,&
            nx,ny)
 
  implicit none
  integer,intent(in) :: nx,ny,hillslopes(nx,ny),nh,basins(nx,ny)
  real,intent(in) :: dem(nx,ny),res,latitude(nx,ny),longitude(nx,ny)
- integer,intent(out) :: hillslopes_basin(nh)
+ integer,intent(out) :: hillslopes_basin(nh),hillslopes_id(nh)
  real,intent(out) :: hillslopes_elevation(nh),hillslopes_area(nh)
  real,intent(out) :: hillslopes_latitude(nh),hillslopes_longitude(nh)
  real,intent(out) :: hillslopes_range(nh)
@@ -677,8 +678,12 @@ subroutine calculate_hillslope_properties(hillslopes,dem,basins,res,nh,&
   enddo
  enddo
 
- !Convergence index
-
+ !Define the index
+ hillslopes_id = 0
+ do ih=1,nh
+  hillslopes_id(ih) = ih
+ enddo
+ 
 end subroutine
 
 subroutine cleanup_hillslopes(hillslopes,nx,ny)
@@ -787,5 +792,98 @@ recursive subroutine determine_channel_depth(i,j,channeldepth,cd,fdir,mask,nx,ny
   call determine_channel_depth(inew,jnew,channeldepth,cd,fdir,mask,nx,ny)
   channeldepth(i,j) = cd
  endif
+
+end subroutine
+
+subroutine calculate_hillslopesd8(channels,mask,fdir,hillslopes,nx,ny)
+
+ implicit none
+ integer,intent(in) :: nx,ny
+ integer,intent(in) :: channels(nx,ny),mask(nx,ny),fdir(nx,ny,2)
+ integer,intent(out) :: hillslopes(nx,ny)
+ integer :: i,j,ih
+ real :: undef = -9999
+
+ !Initialize the hillslopes array
+ hillslopes = channels
+
+ !Mask out all the elements that are not channels
+ where ((mask .le. 0) .or. (channels .le. 0))
+  hillslopes = undef
+ endwhere
+
+ !Go through and assign each cell its own id
+ ih = 1
+ do i=1,nx
+  do j=1,ny
+   if (hillslopes(i,j) .ne. undef)then
+    hillslopes(i,j) = ih
+    ih = ih + 1
+   endif
+  enddo
+ enddo
+
+ !Iterate cell by cell
+ do i=1,nx
+  do j=1,ny
+   !Only work on this cell if the basin id is unknown and the mask is positive
+   if ((hillslopes(i,j) .eq. undef) .and. (mask(i,j) .ge. 1)) then
+    call determine_hillslopesd8(i,j,hillslopes,ih,fdir,mask,nx,ny)
+   endif
+  enddo
+ enddo
+
+ !Maskout the channels
+ where (channels .gt. 0)
+  hillslopes = undef
+ endwhere
+
+ !Clean up the hillslopes
+ call cleanup_hillslopes(hillslopes,nx,ny)
+ 
+end subroutine
+
+recursive subroutine determine_hillslopesd8(i,j,hillslopes,ih,fdir,mask,nx,ny)
+
+ implicit none
+ integer,intent(in) :: i,j,nx,ny,fdir(nx,ny,2)
+ integer,intent(inout) :: mask(nx,ny),ih,hillslopes(nx,ny)
+ integer :: inew,jnew
+ !Determine which way is down
+ inew = fdir(i,j,1)
+ jnew = fdir(i,j,2)
+ if ((inew.lt.1).or.(jnew.lt.1).or.(inew.gt.nx).or.(jnew.gt.ny))return
+ if (mask(i,j) .eq. 0)return
+ !Figure out if downhill has a value if not then recurse. If it does then
+ if (hillslopes(inew,jnew) .gt. 0)then
+  ih = hillslopes(inew,jnew)
+  hillslopes(i,j) = ih
+ else
+  call determine_hillslopesd8(inew,jnew,hillslopes,ih,fdir,mask,nx,ny)
+  hillslopes(i,j) = ih
+ endif
+
+end subroutine
+
+subroutine assign_clusters_to_hillslopes(hillslopes_org,clusters,hillslopes_new,nx,ny,nh)
+
+ implicit none
+ integer,intent(in) :: nx,ny,nh
+ integer,intent(in) :: hillslopes_org(nx,ny),clusters(nh)
+ integer,intent(out) :: hillslopes_new(nx,ny)
+ integer :: i,j,undef
+ undef = -9999
+
+ !Initialize the new array
+ hillslopes_new = hillslopes_org
+
+ !Go through and set the ids
+ do i=1,nx
+  do j=1,ny
+   if (hillslopes_org(i,j) .ne. undef)then
+    hillslopes_new(i,j) = clusters(hillslopes_org(i,j))
+   endif
+  enddo
+ enddo
 
 end subroutine
