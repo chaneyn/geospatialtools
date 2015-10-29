@@ -69,13 +69,18 @@ def define_hrus(basins,dem,channels):
 
  return 
 
-def calculate_hillslope_properties(hillslopes,dem,basins,res):
+def calculate_hillslope_properties(hillslopes,dem,basins,res,latitude,longitude):
 
  nh = np.max(hillslopes)
- (eh,ah,bh) = ttf.calculate_hillslope_properties(hillslopes,dem,basins,res,nh)
+ (eh,ah,bh,lath,lonh,erange) = ttf.calculate_hillslope_properties(hillslopes,
+                               dem,basins,res,nh,latitude,longitude)
  properties = {'elevation':eh,
                'area':ah,
                'basin':bh,
+               'latitude':lath,
+               'longitude':lonh,
+               'range':erange
               }
+ #Add aspect,slope,covergence,ids
 
  return properties

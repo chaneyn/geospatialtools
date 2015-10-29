@@ -622,30 +622,46 @@ recursive subroutine define_hillslope_id(i,j,hillslope_id,hillslopes,&
 end subroutine
 
 subroutine calculate_hillslope_properties(hillslopes,dem,basins,res,nh,&
+           latitude,longitude,&
            hillslopes_elevation,hillslopes_area,hillslopes_basin,&
+           hillslopes_latitude,hillslopes_longitude,hillslopes_range,&
            nx,ny)
 
  implicit none
  integer,intent(in) :: nx,ny,hillslopes(nx,ny),nh,basins(nx,ny)
- real,intent(in) :: dem(nx,ny),res
+ real,intent(in) :: dem(nx,ny),res,latitude(nx,ny),longitude(nx,ny)
  integer,intent(out) :: hillslopes_basin(nh)
  real,intent(out) :: hillslopes_elevation(nh),hillslopes_area(nh)
+ real,intent(out) :: hillslopes_latitude(nh),hillslopes_longitude(nh)
+ real,intent(out) :: hillslopes_range(nh)
+ real :: hillslopes_maxelev(nh),hillslopes_minelev(nh)
  integer :: hillslopes_count(nh)
- integer :: i,j,hillslope
+ integer :: i,j,ih
 
- !Hillslope elevation
+ !Hillslope elevation,latitude,longitude
+ hillslopes_minelev = 9.99e+08
+ hillslopes_maxelev = -9.99e+08
  hillslopes_elevation = 0.0
+ hillslopes_latitude = 0.0
+ hillslopes_longitude = 0.0
  hillslopes_count = 0
  do i=1,nx
   do j=1,ny
-   hillslope = hillslopes(i,j)
-   if (hillslope .gt. 0)then
-    hillslopes_elevation(hillslope) = hillslopes_elevation(hillslope) + dem(i,j)
-    hillslopes_count(hillslope) = hillslopes_count(hillslope) + 1
+   ih = hillslopes(i,j)
+   if (ih .gt. 0)then
+    hillslopes_elevation(ih) = hillslopes_elevation(ih) + dem(i,j)
+    if (dem(i,j) .gt. hillslopes_maxelev(ih))hillslopes_maxelev(ih) = dem(i,j)
+    if (dem(i,j) .lt. hillslopes_minelev(ih))hillslopes_minelev(ih) = dem(i,j)
+    hillslopes_latitude(ih) = hillslopes_latitude(ih) + latitude(i,j)
+    hillslopes_longitude(ih) = hillslopes_longitude(ih) + longitude(i,j)
+    hillslopes_count(ih) = hillslopes_count(ih) + 1
    endif
   enddo
  enddo
  hillslopes_elevation = hillslopes_elevation/hillslopes_count
+ hillslopes_latitude = hillslopes_latitude/hillslopes_count
+ hillslopes_longitude = hillslopes_longitude/hillslopes_count
+ hillslopes_range = hillslopes_maxelev - hillslopes_minelev
 
  !Hillslope area
  hillslopes_area = res**2*hillslopes_count
@@ -654,9 +670,9 @@ subroutine calculate_hillslope_properties(hillslopes,dem,basins,res,nh,&
  hillslopes_basin = 0
  do i=1,nx
   do j=1,ny
-   hillslope = hillslopes(i,j)
-   if (hillslope .gt. 0)then
-    hillslopes_basin(hillslope) = basins(i,j)
+   ih = hillslopes(i,j)
+   if (ih .gt. 0)then
+    hillslopes_basin(ih) = basins(i,j)
    endif
   enddo
  enddo
