@@ -728,4 +728,64 @@ subroutine cleanup_hillslopes(hillslopes,nx,ny)
  enddo
 
 end subroutine
-   
+
+subroutine calculate_depth2channel(channels,mask,fdir,dem,depth2channel,nx,ny)
+
+ implicit none
+ integer,intent(in) :: nx,ny
+ integer,intent(in) :: channels(nx,ny),mask(nx,ny),fdir(nx,ny,2),dem(nx,ny)
+ real,intent(out) :: depth2channel(nx,ny)
+ real :: channeldepth(nx,ny),cd
+ integer :: i,j
+ real :: undef = -9.99e+08
+
+ !Initialize the channel depth array to -9999.0
+ channeldepth = dem
+ depth2channel = undef
+
+ !Mask out all the elevation elements that are not channels
+ where ((mask .le. 0) .or. (channels .le. 0))
+  channeldepth = undef
+ endwhere
+
+ !Iterate cell by cell
+ do i=1,nx
+  do j=1,ny
+   !Only work on this cell if the basin id is unknown and the mask is positive
+   if ((channeldepth(i,j) .eq. undef) .and. (mask(i,j) .ge. 1)) then
+    call determine_channel_depth(i,j,channeldepth,cd,fdir,mask,nx,ny)
+   endif
+  enddo
+ enddo
+
+ !Calculate the depth2channel by subtracting the channel depth
+ depth2channel = channeldepth!dem - channeldepth
+ where (mask .le. 0)
+  depth2channel = undef
+ endwhere
+ 
+
+end subroutine
+
+recursive subroutine determine_channel_depth(i,j,channeldepth,cd,fdir,mask,nx,ny)
+
+ implicit none
+ integer,intent(in) :: i,j,nx,ny,fdir(nx,ny,2)
+ integer,intent(inout) :: mask(nx,ny)
+ real,intent(inout) :: cd,channeldepth(nx,ny)
+ integer :: inew,jnew
+ !Determine which way is down
+ inew = fdir(i,j,1)
+ jnew = fdir(i,j,2)
+ if ((inew.lt.1).or.(jnew.lt.1).or.(inew.gt.nx).or.(jnew.gt.ny))return
+ if (mask(i,j) .eq. 0)return
+ !Figure out if downhill has a value if not then recurse. If it does then
+ if (channeldepth(inew,jnew) .gt. 0)then
+  cd = channeldepth(inew,jnew)
+  channeldepth(i,j) = cd
+ else
+  call determine_channel_depth(inew,jnew,channeldepth,cd,fdir,mask,nx,ny)
+  channeldepth(i,j) = cd
+ endif
+
+end subroutine

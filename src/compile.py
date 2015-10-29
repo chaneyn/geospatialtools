@@ -8,6 +8,7 @@ subroutines = 'calculate_d8_acc \
               delineate_basins \
               delineate_hillslopes \
               calculate_hillslope_properties \
+              calculate_depth2channel \
               retrieve_basin_properties'
 
 #Create library
