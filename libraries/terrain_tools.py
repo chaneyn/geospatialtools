@@ -113,10 +113,10 @@ def create_nd_histogram(hillslopes,depth2channel,nbins):
 
  return (hrus,clusters)
 
-def calculate_hru_properties(hillslopes,tiles,channels,res,nhillslopes,hrus,depth2channel):
+def calculate_hru_properties(hillslopes,tiles,channels,res,nhillslopes,hrus,depth2channel,slope):
 
  nhru = np.unique(hrus)[1::].size
- (wb,wt,l,hru_position,hid,tid,hru,hru_area,hru_dem) = ttf.calculate_hru_properties(hillslopes,tiles,channels,nhru,res,nhillslopes,hrus,depth2channel)
+ (wb,wt,l,hru_position,hid,tid,hru,hru_area,hru_dem,hru_slope) = ttf.calculate_hru_properties(hillslopes,tiles,channels,nhru,res,nhillslopes,hrus,depth2channel,slope)
  hru_properties = {'width_bottom':wb,
                    'width_top':wt,
                    'hillslope_length':l,
@@ -125,6 +125,7 @@ def calculate_hru_properties(hillslopes,tiles,channels,res,nhillslopes,hrus,dept
                    'tile_id':tid,
                    'hru':hru,
                    'area':hru_area,
+                   'slope':hru_slope,
                    'depth2channel':hru_dem}
 
  return hru_properties

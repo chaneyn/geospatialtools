@@ -892,18 +892,18 @@ subroutine assign_clusters_to_hillslopes(hillslopes_org,clusters,hillslopes_new,
 end subroutine
 
 subroutine calculate_hru_properties(hillslopes,tiles,channels,nhru,res,nhillslope,&
-           hrus,dem,&
+           hrus,dem,slope,&
            hru_bwidth,hru_twidth,hru_length,hru_position,&
-           hru_hid,hru_tid,hru_id,hru_area,hru_dem,&
+           hru_hid,hru_tid,hru_id,hru_area,hru_dem,hru_slope,&
            nx,ny,nc)
 
  implicit none
  integer,intent(in) :: nx,ny,nhru,nc,nhillslope(nc)
  integer,intent(in) :: hillslopes(nx,ny),tiles(nx,ny),channels(nx,ny),hrus(nx,ny)
- real,intent(in) :: dem(nx,ny)
+ real,intent(in) :: dem(nx,ny),slope(nx,ny)
  real,intent(in) :: res
  real,intent(out) :: hru_bwidth(nhru),hru_twidth(nhru),hru_length(nhru)
- real,intent(out) :: hru_area(nhru),hru_dem(nhru),hru_position(nhru)
+ real,intent(out) ::hru_area(nhru),hru_dem(nhru),hru_position(nhru),hru_slope(nhru)
  integer,intent(out) :: hru_hid(nhru),hru_tid(nhru),hru_id(nhru)
  integer :: i,j,ntile,hru,pos,k,l,npos,inew,jnew,cluster,tid,hid,hillslope,ipos
  integer,allocatable,dimension(:,:) :: positions
@@ -931,6 +931,7 @@ subroutine calculate_hru_properties(hillslopes,tiles,channels,nhru,res,nhillslop
  hru_length = 0.0
  hru_area = 0.0
  hru_dem = 0.0
+ hru_slope = 0.0
  hru_position = 0
  hru_hid = 0
  hru_tid = 0 
@@ -950,6 +951,8 @@ subroutine calculate_hru_properties(hillslopes,tiles,channels,nhru,res,nhillslop
     hru_area(hru) = hru_area(hru) + 1
     !hru dem
     hru_dem(hru) = hru_dem(hru) + dem(i,j)
+    !hru slope
+    hru_slope(hru) = hru_slope(hru) + slope(i,j)
     !Add to downstream perimeter
     do pos=1,npos
      inew = i + positions(pos,1)
@@ -981,6 +984,7 @@ subroutine calculate_hru_properties(hillslopes,tiles,channels,nhru,res,nhillslop
   hru_bwidth(i) = res*hru_bwidth(i)/nhillslope(cluster)
   hru_twidth(i) = res*hru_twidth(i)/nhillslope(cluster)
   hru_dem(i) = hru_dem(i)/hru_area(i)
+  hru_slope(i) = hru_slope(i)/hru_area(i)
   hru_area(i) = res**2*hru_area(i)/nhillslope(cluster)
   !Where missing set it to the previous
   if (hru_twidth(i) .eq. 0.0) hru_twidth(i) = hru_twidth(i-1)
