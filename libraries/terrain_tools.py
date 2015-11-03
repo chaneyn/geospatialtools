@@ -87,3 +87,72 @@ def calculate_hillslope_properties(hillslopes,dem,basins,res,latitude,
  #Add aspect,slope,covergence,ids
 
  return properties
+
+def create_nd_histogram(hillslopes,depth2channel,nbins):
+
+ #Define the clusters for each hillslope
+ clusters = np.copy(hillslopes)
+ uh = np.unique(hillslopes)[1::]
+ for ih in uh:
+  mask = hillslopes == ih
+  (hist,bins) = np.histogram(depth2channel[mask],bins=nbins)
+  for ibin in xrange(nbins):
+   smask = mask & (depth2channel >= bins[ibin]) & (depth2channel <= bins[ibin+1])
+   clusters[smask] = ibin+1
+
+ #Define the hrus
+ hrus = nbins*(hillslopes-1) + clusters
+ tmp = np.copy(hrus)
+
+ #Create mapping to clean up hrus
+ uhrus = np.unique(hrus)[1::]
+ mapping = {}
+ for i in xrange(uhrus.size):
+  tmp[hrus == uhrus[i]] = i + 1
+ hrus = tmp
+
+ return (hrus,clusters)
+
+def calculate_hru_properties(hillslopes,tiles,channels,res,nhillslopes,hrus,depth2channel):
+
+ nhru = np.unique(hrus)[1::].size
+ (wb,wt,l,hru_position,hid,tid,hru,hru_area,hru_dem) = ttf.calculate_hru_properties(hillslopes,tiles,channels,nhru,res,nhillslopes,hrus,depth2channel)
+ hru_properties = {'width_bottom':wb,
+                   'width_top':wt,
+                   'hillslope_length':l,
+                   'hillslope_position':hru_position,
+                   'hillslope_id':hid,
+                   'tile_id':tid,
+                   'hru':hru,
+                   'area':hru_area,
+                   'depth2channel':hru_dem}
+
+ return hru_properties
+                       
+def cluster_hillslopes(hp,hillslopes,nclusters):
+
+ import sklearn.cluster
+ area = hp['area']
+ area = (area - np.min(area))/(np.max(area) - np.min(area))
+ lats = hp['latitude']
+ lats = (lats - np.min(lats))/(np.max(lats) - np.min(lats))
+ lons = hp['longitude']
+ lons = (lons - np.min(lons))/(np.max(lons) - np.min(lons))
+ dem = hp['elevation']
+ dem = (dem - np.min(dem))/(np.max(dem) - np.min(dem))
+ d2c = hp['d2c']
+ d2c = (d2c - np.min(d2c))/(np.max(d2c) - np.min(d2c))
+ X = np.array([d2c,area]).T
+ model = sklearn.cluster.KMeans(n_clusters=nclusters)
+ clusters = model.fit_predict(X)+1
+ #Assign the new ids to each hillslpe
+ hillslopes_clusters = ttf.assign_clusters_to_hillslopes(hillslopes,clusters)
+ #Determine the number of hillslopes per cluster
+ uclusters = np.unique(clusters)
+ nhillslopes = []
+ for cluster in uclusters:
+  nhillslopes.append(np.sum(clusters == cluster))
+ nhillslopes = np.array(nhillslopes)
+
+ return (hillslopes_clusters,nhillslopes)
+
