@@ -11,6 +11,7 @@ subroutines = 'calculate_d8_acc \
               calculate_depth2channel \
               calculate_hillslopesd8 \
               assign_clusters_to_hillslopes \
+              calculate_hru_properties \
               retrieve_basin_properties'
 
 #Create library

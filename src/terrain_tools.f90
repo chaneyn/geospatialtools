@@ -622,19 +622,20 @@ recursive subroutine define_hillslope_id(i,j,hillslope_id,hillslopes,&
 end subroutine
 
 subroutine calculate_hillslope_properties(hillslopes,dem,basins,res,nh,&
-           latitude,longitude,&
+           latitude,longitude,depth2channel,&
            hillslopes_elevation,hillslopes_area,hillslopes_basin,&
            hillslopes_latitude,hillslopes_longitude,hillslopes_range,&
-           hillslopes_id,&
+           hillslopes_id,hillslopes_depth2channel,&
            nx,ny)
 
  implicit none
  integer,intent(in) :: nx,ny,hillslopes(nx,ny),nh,basins(nx,ny)
  real,intent(in) :: dem(nx,ny),res,latitude(nx,ny),longitude(nx,ny)
+ real,intent(in) :: depth2channel(nx,ny)
  integer,intent(out) :: hillslopes_basin(nh),hillslopes_id(nh)
  real,intent(out) :: hillslopes_elevation(nh),hillslopes_area(nh)
  real,intent(out) :: hillslopes_latitude(nh),hillslopes_longitude(nh)
- real,intent(out) :: hillslopes_range(nh)
+ real,intent(out) :: hillslopes_range(nh),hillslopes_depth2channel(nh)
  real :: hillslopes_maxelev(nh),hillslopes_minelev(nh)
  integer :: hillslopes_count(nh)
  integer :: i,j,ih
@@ -651,6 +652,7 @@ subroutine calculate_hillslope_properties(hillslopes,dem,basins,res,nh,&
    ih = hillslopes(i,j)
    if (ih .gt. 0)then
     hillslopes_elevation(ih) = hillslopes_elevation(ih) + dem(i,j)
+    hillslopes_depth2channel(ih) = hillslopes_depth2channel(ih) + depth2channel(i,j)
     if (dem(i,j) .gt. hillslopes_maxelev(ih))hillslopes_maxelev(ih) = dem(i,j)
     if (dem(i,j) .lt. hillslopes_minelev(ih))hillslopes_minelev(ih) = dem(i,j)
     hillslopes_latitude(ih) = hillslopes_latitude(ih) + latitude(i,j)
@@ -659,6 +661,7 @@ subroutine calculate_hillslope_properties(hillslopes,dem,basins,res,nh,&
    endif
   enddo
  enddo
+ hillslopes_depth2channel = hillslopes_depth2channel/hillslopes_count
  hillslopes_elevation = hillslopes_elevation/hillslopes_count
  hillslopes_latitude = hillslopes_latitude/hillslopes_count
  hillslopes_longitude = hillslopes_longitude/hillslopes_count
@@ -738,7 +741,8 @@ subroutine calculate_depth2channel(channels,mask,fdir,dem,depth2channel,nx,ny)
 
  implicit none
  integer,intent(in) :: nx,ny
- integer,intent(in) :: channels(nx,ny),mask(nx,ny),fdir(nx,ny,2),dem(nx,ny)
+ integer,intent(in) :: channels(nx,ny),mask(nx,ny),fdir(nx,ny,2)
+ real,intent(in) :: dem(nx,ny)
  real,intent(out) :: depth2channel(nx,ny)
  real :: channeldepth(nx,ny),cd
  integer :: i,j
@@ -764,7 +768,7 @@ subroutine calculate_depth2channel(channels,mask,fdir,dem,depth2channel,nx,ny)
  enddo
 
  !Calculate the depth2channel by subtracting the channel depth
- depth2channel = channeldepth!dem - channeldepth
+ depth2channel = dem - channeldepth
  where (mask .le. 0)
   depth2channel = undef
  endwhere
@@ -801,7 +805,7 @@ subroutine calculate_hillslopesd8(channels,mask,fdir,hillslopes,nx,ny)
  integer,intent(in) :: nx,ny
  integer,intent(in) :: channels(nx,ny),mask(nx,ny),fdir(nx,ny,2)
  integer,intent(out) :: hillslopes(nx,ny)
- integer :: i,j,ih
+ integer :: i,j,ih,maxih
  real :: undef = -9999
 
  !Initialize the hillslopes array
@@ -812,23 +816,15 @@ subroutine calculate_hillslopesd8(channels,mask,fdir,hillslopes,nx,ny)
   hillslopes = undef
  endwhere
 
- !Go through and assign each cell its own id
- ih = 1
- do i=1,nx
-  do j=1,ny
-   if (hillslopes(i,j) .ne. undef)then
-    hillslopes(i,j) = ih
-    ih = ih + 1
-   endif
-  enddo
- enddo
-
  !Iterate cell by cell
+ maxih = 0
  do i=1,nx
   do j=1,ny
    !Only work on this cell if the basin id is unknown and the mask is positive
    if ((hillslopes(i,j) .eq. undef) .and. (mask(i,j) .ge. 1)) then
-    call determine_hillslopesd8(i,j,hillslopes,ih,fdir,mask,nx,ny)
+    ih = maxih
+    call determine_hillslopesd8(i,j,hillslopes,ih,fdir,mask,channels,nx,ny)
+    if (ih .gt. maxih) maxih = ih
    endif
   enddo
  enddo
@@ -843,10 +839,11 @@ subroutine calculate_hillslopesd8(channels,mask,fdir,hillslopes,nx,ny)
  
 end subroutine
 
-recursive subroutine determine_hillslopesd8(i,j,hillslopes,ih,fdir,mask,nx,ny)
+recursive subroutine determine_hillslopesd8(i,j,hillslopes,ih,fdir,mask,&
+                                            channels,nx,ny)
 
  implicit none
- integer,intent(in) :: i,j,nx,ny,fdir(nx,ny,2)
+ integer,intent(in) :: i,j,nx,ny,fdir(nx,ny,2),channels(nx,ny)
  integer,intent(inout) :: mask(nx,ny),ih,hillslopes(nx,ny)
  integer :: inew,jnew
  !Determine which way is down
@@ -856,10 +853,16 @@ recursive subroutine determine_hillslopesd8(i,j,hillslopes,ih,fdir,mask,nx,ny)
  if (mask(i,j) .eq. 0)return
  !Figure out if downhill has a value if not then recurse. If it does then
  if (hillslopes(inew,jnew) .gt. 0)then
-  ih = hillslopes(inew,jnew)
+  !If it is a channel then increase the id
+  if (channels(inew,jnew) .gt. 0)then
+   ih = ih + 1
+  else 
+   ih = hillslopes(inew,jnew)
+  endif
+  !ih = hillslopes(inew,jnew)
   hillslopes(i,j) = ih
  else
-  call determine_hillslopesd8(inew,jnew,hillslopes,ih,fdir,mask,nx,ny)
+  call determine_hillslopesd8(inew,jnew,hillslopes,ih,fdir,mask,channels,nx,ny)
   hillslopes(i,j) = ih
  endif
 
@@ -882,6 +885,125 @@ subroutine assign_clusters_to_hillslopes(hillslopes_org,clusters,hillslopes_new,
   do j=1,ny
    if (hillslopes_org(i,j) .ne. undef)then
     hillslopes_new(i,j) = clusters(hillslopes_org(i,j))
+   endif
+  enddo
+ enddo
+
+end subroutine
+
+subroutine calculate_hru_properties(hillslopes,tiles,channels,nhru,res,nhillslope,&
+           hrus,dem,&
+           hru_bwidth,hru_twidth,hru_length,hru_position,&
+           hru_hid,hru_tid,hru_id,hru_area,hru_dem,&
+           nx,ny,nc)
+
+ implicit none
+ integer,intent(in) :: nx,ny,nhru,nc,nhillslope(nc)
+ integer,intent(in) :: hillslopes(nx,ny),tiles(nx,ny),channels(nx,ny),hrus(nx,ny)
+ real,intent(in) :: dem(nx,ny)
+ real,intent(in) :: res
+ real,intent(out) :: hru_bwidth(nhru),hru_twidth(nhru),hru_length(nhru)
+ real,intent(out) :: hru_area(nhru),hru_dem(nhru),hru_position(nhru)
+ integer,intent(out) :: hru_hid(nhru),hru_tid(nhru),hru_id(nhru)
+ integer :: i,j,ntile,hru,pos,k,l,npos,inew,jnew,cluster,tid,hid,hillslope,ipos
+ integer,allocatable,dimension(:,:) :: positions
+ real :: dp(nhru),up(nhru),tile_pos
+ npos = 8
+ allocate(positions(npos,2))
+
+ !Construct positions array
+ pos = 0
+ do k=-1,1
+  do l=-1,1
+   if ((k == 0) .and. (l == 0)) cycle
+   pos = pos + 1
+   positions(pos,1) = k
+   positions(pos,2) = l
+  enddo
+ enddo
+
+ !Define some parameters
+ ntile = maxval(tiles)
+
+ !Initialize the properties for each tile
+ hru_bwidth = 0.0
+ hru_twidth = 0.0
+ hru_length = 0.0
+ hru_area = 0.0
+ hru_dem = 0.0
+ hru_position = 0
+ hru_hid = 0
+ hru_tid = 0 
+ 
+ !Iterate through each tile to compute the properties
+ do i=1,nx
+  do j=1,ny
+   if ((hillslopes(i,j) .gt. 0) .and. (tiles(i,j) .gt. 0))then
+    hru = hrus(i,j)
+    !hillslope id
+    hru_hid(hru) = hillslopes(i,j)
+    !tile id
+    hru_tid(hru) = tiles(i,j)
+    !hru
+    hru_id(hru) = hru
+    !hru area
+    hru_area(hru) = hru_area(hru) + 1
+    !hru dem
+    hru_dem(hru) = hru_dem(hru) + dem(i,j)
+    !Add to downstream perimeter
+    do pos=1,npos
+     inew = i + positions(pos,1)
+     jnew = j + positions(pos,2)
+     if (((tiles(i,j) .gt. tiles(inew,jnew)) &
+        .and. (hillslopes(inew,jnew) .eq. hillslopes(i,j))) &
+        .or. (channels(inew,jnew) .gt. 0)) then
+       hru_bwidth(hru) = hru_bwidth(hru) + 1.0
+       exit
+     endif
+    enddo
+    !Add to upstream perimeter
+    do pos=1,npos
+     inew = i + positions(pos,1)
+     jnew = j + positions(pos,2)
+     if ((tiles(i,j) .lt. tiles(inew,jnew)) &
+        .and. (hillslopes(inew,jnew) .eq. hillslopes(i,j)))then
+       hru_twidth(hru) = hru_twidth(hru) + 1.0
+       exit
+     endif
+    enddo
+   endif
+  enddo
+ enddo
+
+ do i = 1,nhru
+  cluster = hru_hid(i)
+  !Calculate the average hillslope properties
+  hru_bwidth(i) = res*hru_bwidth(i)/nhillslope(cluster)
+  hru_twidth(i) = res*hru_twidth(i)/nhillslope(cluster)
+  hru_dem(i) = hru_dem(i)/hru_area(i)
+  hru_area(i) = res**2*hru_area(i)/nhillslope(cluster)
+  !Where missing set it to the previous
+  if (hru_twidth(i) .eq. 0.0) hru_twidth(i) = hru_twidth(i-1)
+  if (hru_bwidth(i) .eq. 0.0) hru_bwidth(i) = hru_bwidth(i-1)
+  !Figure out what to do with the undef lower and top width
+  hru_length(i) = 2*hru_area(i)/(hru_bwidth(i) + hru_twidth(i))
+ enddo
+
+ !Create the positions array
+ hillslope = hru_hid(1)
+ ipos = hru_id(1)
+ do i = 1,nhru
+  !If we are the beginning of a hillslope then memorize initial position
+  if (hru_hid(i) .ne. hillslope)then
+   ipos = hru_id(i)
+   hillslope = hru_hid(i)
+  endif
+  !Define the position
+  do j = ipos,hru_id(i)
+   if (j .eq. ipos) then
+    hru_position(i) = hru_length(j)/2
+   else
+    hru_position(i) = hru_position(i) + hru_length(j)/2 + hru_length(j-1)/2
    endif
   enddo
  enddo
