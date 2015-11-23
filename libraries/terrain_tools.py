@@ -88,39 +88,83 @@ def calculate_hillslope_properties(hillslopes,dem,basins,res,latitude,
 
  return properties
 
-def create_nd_histogram(covariates,mask):
+def create_nd_histogram(hillslopes,covariates):
+
+ #Define the mask
+ mask = hillslopes > 0
+ 
+ #Initialize the cluster number
+ icluster = -1
+
+ #Initialize the hru map
+ hrus = np.empty(covariates[covariates.keys()[0]]['data'].shape).astype(np.int32)
+ hrus[:] = -9999
+
+ #Iterate through each hillslope making the hrus
+ uh = np.unique(hillslopes)[1::]
+ for ih in uh:
+  mask = hillslopes == ih
+
+  #Define the data and the bins
+  bins,data = [],[]
+  for var in covariates:
+   bins.append(covariates[var]['nbins'])
+   data.append(covariates[var]['data'][mask])
+  bins = np.array(bins)
+  data = np.array(data).T
+
+  #Create the histogram
+  H,edges = np.histogramdd(data,bins=bins)
+  H = H/np.sum(H)
+
+  #Create a dictionary of hru info
+  clusters = {}
+  Hfl = H.flat
+  for i in xrange(H.size):
+   coords = Hfl.coords
+   if H[coords] > 0:
+    icluster = icluster + 1
+    clusters[icluster] = {'pct':H[coords]}
+    clusters[icluster]['bounds'] = {}
+    for var in covariates:
+     key = covariates.keys().index(var)
+     clusters[icluster]['bounds'][var] = [edges[key][coords[key]],edges[key][coords[key]+1]]
+   Hfl.next()
+
+  #Map the hru id to the grid
+  for cid in clusters.keys():
+   for id in covariates.keys():
+    if covariates.keys().index(id) == 0: string = "(covariates['%s']['data'] >= clusters[%d]['bounds']['%s'][0]) & (covariates['%s']['data'] <= clusters[%d]['bounds']['%s'][1]) & mask" % (id,cid,id,id,cid,id)
+    else: string = string +  " & (covariates['%s']['data'] >= clusters[%d]['bounds']['%s'][0]) & (covariates['%s']['data'] <= clusters[%d]['bounds']['%s'][1]) & mask" % (id,cid,id,id,cid,id)
+   idx = eval('np.where(%s)' % string)
+   hrus[idx] = cid + 1
+
+ return hrus
+
+def create_hillslope_tiles(hillslopes,depth2channel,nbins):
 
  #Define the clusters for each hillslope
- #depth2channel = covariates['depth2channel']['data']
- #nbins = covariates['depth2channel']['nbins']
- #clusters = np.copy(hillslopes)
- #uh = np.unique(hillslopes)[1::]
- #for ih in uh:
- # mask = hillslopes == ih
- # (hist,bins) = np.histogram(depth2channel[mask],bins=nbins)
- # for ibin in xrange(nbins):
- #  smask = mask & (depth2channel >= bins[ibin]) & (depth2channel <= bins[ibin+1])
- #  clusters[smask] = ibin+1
- mask = mask > 0
- print np.sum(mask),mask.size
- info = covariates.keys()
- for var in covariates:
-  print var,np.unique(covariates[var]['data'][mask])
- exit()
-
+ clusters = np.copy(hillslopes)
+ uh = np.unique(hillslopes)[1::]
+ for ih in uh:
+  mask = hillslopes == ih
+  (hist,bins) = np.histogram(depth2channel[mask],bins=nbins)
+  for ibin in xrange(nbins):
+   smask = mask & (depth2channel >= bins[ibin]) & (depth2channel <= bins[ibin+1])
+   clusters[smask] = ibin+1
 
  #Define the hrus
- #hrus = nbins*(hillslopes-1) + clusters
- #tmp = np.copy(hrus)
-
+ hrus = nbins*(hillslopes-1) + clusters
+ tmp = np.copy(hrus)
  #Create mapping to clean up hrus
- #uhrus = np.unique(hrus)[1::]
- #mapping = {}
- #for i in xrange(uhrus.size):
- # tmp[hrus == uhrus[i]] = i + 1
- #hrus = tmp
+ uhrus = np.unique(hrus)[1::]
+ mapping = {}
+ for i in xrange(uhrus.size):
+  tmp[hrus == uhrus[i]] = i + 1
+ hrus = tmp
+ hrus[hrus <= 0] = -9999
 
- return (hrus,clusters)
+ return (clusters,hrus)
 
 def calculate_hru_properties(hillslopes,tiles,channels,res,nhillslopes,hrus,depth2channel,slope):
 
@@ -152,7 +196,8 @@ def cluster_hillslopes(hp,hillslopes,nclusters):
  dem = (dem - np.min(dem))/(np.max(dem) - np.min(dem))
  d2c = hp['d2c']
  d2c = (d2c - np.min(d2c))/(np.max(d2c) - np.min(d2c))
- X = np.array([lats,lons]).T
+ #X = np.array([lats,lons]).T
+ X = np.array([area,]).T
  model = sklearn.cluster.KMeans(n_clusters=nclusters)
  clusters = model.fit_predict(X)+1
  #Assign the new ids to each hillslpe
