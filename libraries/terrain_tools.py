@@ -153,18 +153,7 @@ def create_hillslope_tiles(hillslopes,depth2channel,nbins):
    smask = mask & (depth2channel >= bins[ibin]) & (depth2channel <= bins[ibin+1])
    clusters[smask] = ibin+1
 
- #Define the hrus
- hrus = nbins*(hillslopes-1) + clusters
- tmp = np.copy(hrus)
- #Create mapping to clean up hrus
- uhrus = np.unique(hrus)[1::]
- mapping = {}
- for i in xrange(uhrus.size):
-  tmp[hrus == uhrus[i]] = i + 1
- hrus = tmp
- hrus[hrus <= 0] = -9999
-
- return (clusters,hrus)
+ return clusters
 
 def calculate_hru_properties(hillslopes,tiles,channels,res,nhillslopes,hrus,depth2channel,slope):
 

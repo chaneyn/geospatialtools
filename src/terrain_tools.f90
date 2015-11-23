@@ -907,6 +907,8 @@ subroutine calculate_hru_properties(hillslopes,tiles,channels,nhru,res,nhillslop
  integer,intent(out) :: hru_hid(nhru),hru_tid(nhru),hru_id(nhru)
  integer :: i,j,ntile,hru,pos,k,l,npos,inew,jnew,cluster,tid,hid,hillslope,ipos
  integer,allocatable,dimension(:,:) :: positions
+ real,allocatable,dimension(:,:) :: tile_bwidth,tile_twidth,tile_length,tile_area
+ real,allocatable,dimension(:,:) :: tile_dem,tile_slope,tile_position
  real :: dp(nhru),up(nhru),tile_pos
  npos = 8
  allocate(positions(npos,2))
@@ -924,43 +926,51 @@ subroutine calculate_hru_properties(hillslopes,tiles,channels,nhru,res,nhillslop
 
  !Define some parameters
  ntile = maxval(tiles)
+ 
+ !Allocate and initialize the tile arrays
+ allocate(tile_bwidth(ntile,nc),tile_twidth(ntile,nc),tile_length(ntile,nc),&!
+          tile_area(ntile,nc),tile_dem(ntile,nc),tile_slope(ntile,nc),&!
+          tile_position(ntile,nc))
+ tile_bwidth = 0.0
+ tile_twidth = 0.0
+ tile_length = 0.0
+ tile_area = 0.0
+ tile_dem = 0.0
+ tile_slope = 0.0
+ tile_position = 0.0
 
  !Initialize the properties for each tile
- hru_bwidth = 0.0
- hru_twidth = 0.0
- hru_length = 0.0
- hru_area = 0.0
- hru_dem = 0.0
- hru_slope = 0.0
- hru_position = 0
+ hru_id = 0
  hru_hid = 0
  hru_tid = 0 
  
  !Iterate through each tile to compute the properties
  do i=1,nx
   do j=1,ny
-   if ((hillslopes(i,j) .gt. 0) .and. (tiles(i,j) .gt. 0))then
-    hru = hrus(i,j)
+   tid = tiles(i,j)
+   hid = hillslopes(i,j)
+   hru = hrus(i,j)
+   if ((hid .gt. 0) .and. (tid .gt. 0))then
     !hillslope id
     hru_hid(hru) = hillslopes(i,j)
     !tile id
     hru_tid(hru) = tiles(i,j)
     !hru
     hru_id(hru) = hru
-    !hru area
-    hru_area(hru) = hru_area(hru) + 1
-    !hru dem
-    hru_dem(hru) = hru_dem(hru) + dem(i,j)
-    !hru slope
-    hru_slope(hru) = hru_slope(hru) + slope(i,j)
+    !tile area
+    tile_area(tid,hid) = tile_area(tid,hid) + 1
+    !tile dem
+    tile_dem(tid,hid) = tile_dem(tid,hid) + dem(i,j)
+    !tile slope
+    tile_slope(tid,hid) = tile_slope(tid,hid) + slope(i,j)
     !Add to downstream perimeter
     do pos=1,npos
      inew = i + positions(pos,1)
      jnew = j + positions(pos,2)
-     if (((tiles(i,j) .gt. tiles(inew,jnew)) &
-        .and. (hillslopes(inew,jnew) .eq. hillslopes(i,j))) &
+     if (((tid .gt. tiles(inew,jnew)) &
+        .and. (hillslopes(inew,jnew) .eq. hid)) &
         .or. (channels(inew,jnew) .gt. 0)) then
-       hru_bwidth(hru) = hru_bwidth(hru) + 1.0
+       tile_bwidth(tid,hid) = tile_bwidth(tid,hid) + 1.0
        exit
      endif
     enddo
@@ -968,9 +978,9 @@ subroutine calculate_hru_properties(hillslopes,tiles,channels,nhru,res,nhillslop
     do pos=1,npos
      inew = i + positions(pos,1)
      jnew = j + positions(pos,2)
-     if ((tiles(i,j) .lt. tiles(inew,jnew)) &
-        .and. (hillslopes(inew,jnew) .eq. hillslopes(i,j)))then
-       hru_twidth(hru) = hru_twidth(hru) + 1.0
+     if ((tid .lt. tiles(inew,jnew)) &
+        .and. (hillslopes(inew,jnew) .eq. hid))then
+       tile_twidth(tid,hid) = tile_twidth(tid,hid) + 1.0
        exit
      endif
     enddo
@@ -978,38 +988,46 @@ subroutine calculate_hru_properties(hillslopes,tiles,channels,nhru,res,nhillslop
   enddo
  enddo
 
- do i = 1,nhru
-  cluster = hru_hid(i)
-  !Calculate the average hillslope properties
-  hru_bwidth(i) = res*hru_bwidth(i)/nhillslope(cluster)
-  hru_twidth(i) = res*hru_twidth(i)/nhillslope(cluster)
-  hru_dem(i) = hru_dem(i)/hru_area(i)
-  hru_slope(i) = hru_slope(i)/hru_area(i)
-  hru_area(i) = res**2*hru_area(i)/nhillslope(cluster)
-  !Where missing set it to the previous
-  if (hru_twidth(i) .eq. 0.0) hru_twidth(i) = hru_twidth(i-1)
-  if (hru_bwidth(i) .eq. 0.0) hru_bwidth(i) = hru_bwidth(i-1)
-  !Figure out what to do with the undef lower and top width
-  hru_length(i) = 2*hru_area(i)/(hru_bwidth(i) + hru_twidth(i))
+ do i = 1,ntile
+  do j = 1,nc
+   !Calculate the average hillslope properties
+   tile_bwidth(i,j) = res*tile_bwidth(i,j)/nhillslope(j)
+   tile_twidth(i,j) = res*tile_twidth(i,j)/nhillslope(j)
+   tile_dem(i,j) = tile_dem(i,j)/tile_area(i,j)
+   tile_slope(i,j) = tile_slope(i,j)/tile_area(i,j)
+   tile_area(i,j) = res**2*tile_area(i,j)/nhillslope(j)
+   !Where missing set it to the previous
+   if (tile_twidth(i,j) .eq. 0.0) tile_twidth(i,j) = tile_twidth(i-1,j)
+   if (tile_bwidth(i,j) .eq. 0.0) tile_bwidth(i,j) = tile_bwidth(i-1,j)
+   !Figure out what to do with the undef lower and top width
+   tile_length(i,j) = 2*tile_area(i,j)/(tile_bwidth(i,j) + tile_twidth(i,j))
+  enddo
  enddo
 
  !Create the positions array
- hillslope = hru_hid(1)
- ipos = hru_id(1)
- do i = 1,nhru
-  !If we are the beginning of a hillslope then memorize initial position
-  if (hru_hid(i) .ne. hillslope)then
-   ipos = hru_id(i)
-   hillslope = hru_hid(i)
-  endif
-  !Define the position
-  do j = ipos,hru_id(i)
-   if (j .eq. ipos) then
-    hru_position(i) = hru_length(j)/2
+ do hid = 1,nc
+  do tid = 1,ntile
+   !Define the position
+   if (tid .eq. 1) then
+    tile_position(tid,hid) = tile_length(tid,hid)/2
    else
-    hru_position(i) = hru_position(i) + hru_length(j)/2 + hru_length(j-1)/2
+    tile_position(tid,hid) = tile_position(tid-1,hid) + &
+    tile_length(tid,hid)/2 + tile_length(tid-1,hid)/2
    endif
   enddo
+ enddo
+
+ !Assign the info to each hru
+ do i = 1,nhru
+  tid = hru_tid(i)
+  hid = hru_hid(i)
+  hru_bwidth(i) = tile_bwidth(tid,hid)
+  hru_twidth(i) = tile_twidth(tid,hid)
+  hru_length(i) = tile_length(tid,hid)
+  hru_area(i) = tile_area(tid,hid)
+  hru_dem(i) = tile_dem(tid,hid)
+  hru_slope(i) = tile_slope(tid,hid)
+  hru_position(i) = tile_position(tid,hid)
  enddo
 
 end subroutine
