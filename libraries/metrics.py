@@ -2,6 +2,15 @@ import numpy as np
 import scipy
 import scipy.stats
 
+def KGE2012(obs,model):
+  #Use only non-nan values
+  idx = np.where((np.isnan(obs) == 0) & (np.isnan(model) == 0))
+  rho = scipy.stats.pearsonr(model[idx],obs[idx])
+  mean_ratio = np.mean(model[idx])/np.mean(obs[idx])
+  cv_ratio = np.std(model[idx])/np.std(obs[idx])/mean_ratio
+  kge = 1 - ((rho[0] - 1)**2 + (mean_ratio - 1)**2 + (cv_ratio - 1)**2)**0.5
+  return kge
+
 def KGE(obs,model):
   #Use only non-nan values
   idx = np.where((np.isnan(obs) == 0) & (np.isnan(model) == 0))
