@@ -185,8 +185,8 @@ def cluster_hillslopes(hp,hillslopes,nclusters):
  dem = (dem - np.min(dem))/(np.max(dem) - np.min(dem))
  d2c = hp['d2c']
  d2c = (d2c - np.min(d2c))/(np.max(d2c) - np.min(d2c))
- #X = np.array([lats,lons]).T
- X = np.array([area,]).T
+ X = np.array([dem,lats,lons]).T
+ #X = np.array([area,]).T
  model = sklearn.cluster.KMeans(n_clusters=nclusters)
  clusters = model.fit_predict(X)+1
  #Assign the new ids to each hillslpe

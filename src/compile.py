@@ -1,4 +1,5 @@
 import os
+#Terrain tools
 #os.system('rm -rf terrain_tools.pyf')
 os.system('rm -rf *.dSYM')
 #subroutines
@@ -21,3 +22,17 @@ os.system(cmd)
 
 #Move to the previos directory
 os.system('mv terrain_tools_fortran.so ../libraries/.')
+
+#Upscaling tools
+#os.system('rm -rf terrain_tools.pyf')
+os.system('rm -rf *.dSYM')
+#subroutines
+subroutines = 'time_average'
+
+#Create library
+cmd = 'f2py -c only: %s : -m upscaling_tools_fortran upscaling_tools.f90 -lgomp --fcompiler=gnu95 --f90flags="-w -fopenmp -O3"' % subroutines
+print cmd
+os.system(cmd)
+
+#Move to the previos directory
+os.system('mv upscaling_tools_fortran.so ../libraries/.')
