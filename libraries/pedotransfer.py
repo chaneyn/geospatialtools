@@ -26,10 +26,12 @@ def Texture_Class(clay,silt,sand):
  texture_class = np.copy(clay)
  texture_class[:] = -9999.0
  #SAND (1) ((silt + 1.5*clay) < 15)
- mask = (silt + 1.5*clay) < 15.0
+ #mask = (silt + 1.5*clay) < 15.0
+ mask = (clay <= 10) & (sand >= 85)
  texture_class[mask] = 1
  #LOAMY SAND (2) ((silt + 1.5*clay >= 15) && (silt + 2*clay < 30))	LOAMY SAND
- mask = ((silt + 1.5*clay >= 15) & (silt + 2*clay < 30))
+ #mask = ((silt + 1.5*clay >= 15) & (silt + 2*clay < 30))
+ mask = (clay <= 20 & clay >= 10) & (sand >= 70 & sand <= 85)
  texture_class[mask] = 2
  #SANDY LOAM (3) ((clay >= 7 && clay < 20) && (sand > 52) && ((silt + 2*clay) >= 30) || (clay < 7 && silt < 50 && (silt+2*clay)>=30))
  mask = (((clay >= 7) & (clay < 20) & (sand > 52) & ((silt + 2*clay) >= 30)) | ((clay < 7) & (silt < 50) & ((silt+2*clay) >=30)))
