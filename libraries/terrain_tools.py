@@ -1,6 +1,7 @@
 #Import all the functions from the fortran library
 import numpy as np
 import terrain_tools_fortran as ttf
+import sklearn.cluster
 
 def compute_basin_delineation_nbasins(dem,mask,res,nbasins):
 
@@ -125,6 +126,9 @@ def reduce_basin_number(basins,bp,nbasins_goal):
  ubasins = np.unique(basins)[1::]
  for i in xrange(ubasins.size):
   basins[basins == ubasins[i]] = i+1
+ 
+ #Reset the undefined values
+ basins[basins <= 0] = -9999
 
  return basins
 
@@ -146,6 +150,61 @@ def calculate_hillslope_properties(hillslopes,dem,basins,res,latitude,
  #Add aspect,slope,covergence,ids
 
  return properties
+
+def create_tiles_kmeans(basins,covariates,ntiles):
+
+ #Define the mask
+ mask = basins > 0
+ 
+ #Initialize the cluster number
+ icluster = 0
+
+ #Initialize the hru map
+ hrus = np.empty(covariates[covariates.keys()[0]]['data'].shape).astype(np.int32)
+ hrus[:] = -9999
+
+ #Iterate through each hillslope making the hrus
+ ub = np.unique(basins)[1::]
+ for ib in ub:
+  mask = basins == ib
+
+  #Define the data and the bins
+  X = []
+  for var in covariates:
+   X.append(covariates[var]['data'][mask])
+  X = np.array(X).T
+
+  #Normalize the data
+  for i in xrange(X.shape[1]):
+   X[:,i] = X[:,i]/np.max(X[:,i])
+
+  #Subsample the array
+  np.random.seed(1)
+  minsamples = 10**5
+  if X.shape[0] > minsamples:
+   Xf = X[np.random.choice(np.arange(X.shape[0]),minsamples),:]
+  else:
+   Xf = X
+
+  #Cluster the data
+  init = 0.5*np.ones((ntiles,Xf.shape[1]))
+  batch_size = 25*ntiles
+  init_size = 3*batch_size
+  clf = sklearn.cluster.MiniBatchKMeans(ntiles,random_state=1,init=init,batch_size=batch_size,init_size=init_size)
+  #clf = sklearn.cluster.KMeans(ntiles,random_state=1)
+  clf.fit(Xf)#
+  clf_output = clf.predict(X)
+
+  #Map the hrus
+  hrus[mask] = clf_output+icluster
+ 
+  #Update icluster
+  icluster = np.max(hrus)+1
+
+ #Finalize hrus array
+ hrus[hrus < 0] = -9999
+
+ return hrus
 
 def create_nd_histogram(hillslopes,covariates):
 
