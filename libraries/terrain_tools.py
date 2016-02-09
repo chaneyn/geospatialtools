@@ -94,15 +94,19 @@ def reduce_basin_number(basins,bp,nbasins_goal):
  while nbasins > nbasins_goal:
   #Determine the basin to add
   #To attempt similar area we will first determine which one decreases the area standard deviation
-  print nbasins
-  area_cp = np.copy(area)
-  for ib in xrange(area.size):
+  astd = []
+  #Get the smallest 10
+  ibs = np.argsort(area)[0:10]
+  
+  for ib in ibs:
+   area_cp = np.copy(area)
    #tmp = np.argmin(area[nids>=0])
    #ib = np.where(area_cp == area_cp[nids>=0][tmp])[0][0]
    area_cp[ids==nids[ib]] = area_cp[ids==nids[ib]] + area_cp[ib]
    astd.append(np.std(area_cp))
-  ib = np.argmin(astd)
-  print ib
+  astd = np.array(astd)
+  tmp = np.argmin(astd[nids[ibs]>=0])
+  ib = ibs[np.where(astd == astd[nids[ibs]>=0][tmp])[0][0]]
  
   #Add it to its next basin
   area[ids==nids[ib]] = area[ids==nids[ib]] + area[ib]
