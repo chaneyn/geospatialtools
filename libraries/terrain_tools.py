@@ -92,10 +92,18 @@ def reduce_basin_number(basins,bp,nbasins_goal):
  nbasins = ids.size
 
  while nbasins > nbasins_goal:
-  #HELP!
-  #Determine the smallest basin
-  tmp = np.argmin(area[nids>=0])
-  ib = np.where(area == area[nids>=0][tmp])[0][0]
+  #Determine the basin to add
+  #To attempt similar area we will first determine which one decreases the area standard deviation
+  print nbasins
+  area_cp = np.copy(area)
+  for ib in xrange(area.size):
+   #tmp = np.argmin(area[nids>=0])
+   #ib = np.where(area_cp == area_cp[nids>=0][tmp])[0][0]
+   area_cp[ids==nids[ib]] = area_cp[ids==nids[ib]] + area_cp[ib]
+   astd.append(np.std(area_cp))
+  ib = np.argmin(astd)
+  print ib
+ 
   #Add it to its next basin
   area[ids==nids[ib]] = area[ids==nids[ib]] + area[ib]
   #Wherever the original basin id was the next basin replace it
