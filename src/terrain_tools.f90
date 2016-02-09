@@ -621,6 +621,51 @@ recursive subroutine define_hillslope_id(i,j,hillslope_id,hillslopes,&
 
 end subroutine
 
+subroutine calculate_basin_properties(basins,res,nb,&
+           fdir,latitude,longitude,&
+           basins_area,basins_latitude,basins_longitude,&
+           basins_id,basins_nid,&
+           nx,ny)
+
+ implicit none
+ integer,intent(in) :: nx,ny,nb,basins(nx,ny)
+ real,intent(in) :: res,latitude(nx,ny),longitude(nx,ny)
+ integer,intent(in),dimension(nx,ny,2) :: fdir
+ integer,intent(out) :: basins_nid(nb),basins_id(nb)
+ real,intent(out) :: basins_area(nb)
+ real,intent(out) :: basins_latitude(nb),basins_longitude(nb)
+ integer :: basins_count(nb)
+ integer :: i,j,id,inew,jnew,nid,count
+ count = 0
+ basins_nid(:) = -9999
+ basins_id(:) = -9999
+ basins_count(:) = 0
+
+ !Determine the basin that each basin flows into
+ do i=1,nx
+  do j=1,ny
+   id = basins(i,j)
+   if (id .le. 0) cycle
+   !Determine the id that it flows into
+   inew = fdir(i,j,1)
+   jnew = fdir(i,j,2) 
+   if ((inew.lt.1).or.(jnew.lt.1).or.(inew.gt.nx).or.(jnew.gt.ny))cycle
+   nid = basins(inew,jnew)
+   basins_id(id) = id
+   basins_count(id) = basins_count(id) + 1
+   if (nid .le. 0) cycle
+   if (nid .ne. id) then
+    basins_nid(id) = nid
+    count = count + 1
+   endif
+  enddo
+ enddo
+
+ !Basin area
+ basins_area = res**2*basins_count
+
+end subroutine
+
 subroutine calculate_hillslope_properties(hillslopes,dem,basins,res,nh,&
            latitude,longitude,depth2channel,&
            hillslopes_elevation,hillslopes_area,hillslopes_basin,&

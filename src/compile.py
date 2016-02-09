@@ -9,6 +9,7 @@ subroutines = 'calculate_d8_acc \
               delineate_basins \
               delineate_hillslopes \
               calculate_hillslope_properties \
+              calculate_basin_properties \
               calculate_depth2channel \
               calculate_hillslopesd8 \
               assign_clusters_to_hillslopes \

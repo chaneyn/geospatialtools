@@ -69,6 +69,53 @@ def define_hrus(basins,dem,channels):
 
  return 
 
+def calculate_basin_properties(basins,res,latitude,longitude,fdir):
+
+ nb = np.max(basins)
+ (ah,lath,lonh,hid,nid) = ttf.calculate_basin_properties(basins,res,nb,fdir,
+                               latitude,longitude)
+ properties = {
+               'area':ah,
+               'latitude':lath,
+               'longitude':lonh,
+               'id':hid,
+               'nid':nid
+              }
+
+ return properties
+
+def reduce_basin_number(basins,bp,nbasins_goal):
+
+ ids = bp['id']-1
+ nids = bp['nid']-1
+ area = bp['area']
+ nbasins = ids.size
+
+ while nbasins > nbasins_goal:
+  #HELP!
+  #Determine the smallest basin
+  tmp = np.argmin(area[nids>=0])
+  ib = np.where(area == area[nids>=0][tmp])[0][0]
+  #Add it to its next basin
+  area[ids==nids[ib]] = area[ids==nids[ib]] + area[ib]
+  #Wherever the original basin id was the next basin replace it
+  nids[nids == ids[ib]] = nids[ib]
+  #Set the basin map to new id
+  basins[basins == ids[ib]+1] = nids[ib]+1
+  #Remove the row of the basin
+  ids = np.delete(ids,ib)
+  nids = np.delete(nids,ib)
+  area = np.delete(area,ib)
+  #Update the number of basins
+  nbasins = nbasins - 1
+
+ #Reassign basins
+ ubasins = np.unique(basins)[1::]
+ for i in xrange(ubasins.size):
+  basins[basins == ubasins[i]] = i+1
+
+ return basins
+
 def calculate_hillslope_properties(hillslopes,dem,basins,res,latitude,
     longitude,depth2channel):
 
@@ -185,7 +232,8 @@ def cluster_hillslopes(hp,hillslopes,nclusters):
  dem = (dem - np.min(dem))/(np.max(dem) - np.min(dem))
  d2c = hp['d2c']
  d2c = (d2c - np.min(d2c))/(np.max(d2c) - np.min(d2c))
- X = np.array([dem,lats,lons]).T
+ #X = np.array([dem,lats,lons]).T
+ X = np.array([lats,lons]).T
  #X = np.array([area,]).T
  model = sklearn.cluster.KMeans(n_clusters=nclusters)
  clusters = model.fit_predict(X)+1
