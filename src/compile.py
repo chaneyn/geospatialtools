@@ -4,6 +4,7 @@ import os
 os.system('rm -rf *.dSYM')
 #subroutines
 subroutines = 'calculate_d8_acc \
+              calculate_d8_acc_alt \
               calculate_mfd_acc \
               calculate_channels \
               delineate_basins \
