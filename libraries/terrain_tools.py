@@ -201,6 +201,13 @@ def create_tiles_kmeans(basins,covariates,ntiles):
   #Update icluster
   icluster = np.max(hrus)+1
 
+ #Clean up the hrus
+ uhrus = np.unique(hrus)[1::]
+ hrus_new = np.copy(hrus)
+ for i in xrange(uhrus.size):
+  hrus_new[hrus == uhrus[i]] = i
+ hrus = hrus_new
+
  #Finalize hrus array
  hrus[hrus < 0] = -9999
 

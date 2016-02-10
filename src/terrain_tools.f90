@@ -1,9 +1,9 @@
-subroutine calculate_d8_acc(dem,res,area,fdir,nx,ny)
+subroutine calculate_d8_acc(dem,res,variable,area,fdir,nx,ny)
 
  implicit none
  integer,intent(in) :: nx,ny
  real,intent(in) :: res
- real,intent(in),dimension(nx,ny) :: dem
+ real,intent(in),dimension(nx,ny) :: dem,variable
  real,intent(out),dimension(nx,ny) :: area
  integer,intent(out),dimension(nx,ny,2) :: fdir
  integer,allocatable,dimension(:,:) :: positions
@@ -53,34 +53,36 @@ subroutine calculate_d8_acc(dem,res,area,fdir,nx,ny)
  catchment(:,:) = 0
  do i=1,nx
   do j=1,ny
-   call neighbr_check_d8(i,j,dem,catchment,fdir,positions,nx,ny,npos)
+   call neighbr_check_d8(i,j,dem,catchment,fdir,positions,nx,ny,npos,variable)
   enddo
  enddo
 
  !Calculate accumulation area
- area = res**2*catchment
+ area = catchment
+ !area = res**2*catchment
 
 end subroutine
 
-recursive subroutine neighbr_check_d8(i,j,dem,catchment,fdir,positions,nx,ny,npos)
+recursive subroutine neighbr_check_d8(i,j,dem,catchment,fdir,positions,nx,ny,npos,variable)
  
  implicit none
  integer,intent(in) :: i,j,npos,nx,ny
- real,intent(in),dimension(nx,ny) :: dem
+ real,intent(in),dimension(nx,ny) :: dem,variable
  integer,intent(inout),dimension(nx,ny) :: catchment
  integer,intent(in),dimension(nx,ny,2) :: fdir
  integer,intent(in),dimension(npos,2) :: positions
  integer :: ipos,inew,jnew
 
  if (catchment(i,j) .le. 0)then
-  catchment(i,j) = 1
+  !catchment(i,j) = 1
+  catchment(i,j) = variable(i,j)
   do ipos=1,npos
    inew = i+positions(ipos,1)
    jnew = j+positions(ipos,2)
    if ((inew .lt. 1) .or. (jnew .lt. 1) .or. (inew .gt. nx) .or. (jnew .gt. ny)) cycle
    if (dem(inew,jnew) .gt. dem(i,j))then
     if ((fdir(inew,jnew,1) .eq. i) .and. (fdir(inew,jnew,2) .eq. j))then
-     call neighbr_check_d8(inew,jnew,dem,catchment,fdir,positions,nx,ny,npos)
+     call neighbr_check_d8(inew,jnew,dem,catchment,fdir,positions,nx,ny,npos,variable)
      catchment(i,j) = catchment(i,j) + catchment(inew,jnew)
     endif
    endif
