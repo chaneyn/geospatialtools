@@ -184,6 +184,80 @@ recursive subroutine neighbr_check_d8_alt(i,j,dem,catchment,fdir,positions,nx,ny
     
 end subroutine
 
+subroutine calculate_d8_acc_neighbors(dem,res,variable,area,nx,ny)
+
+ implicit none
+ integer,intent(in) :: nx,ny
+ real,intent(in) :: res
+ real,intent(in),dimension(nx,ny) :: dem,variable
+ real,intent(out),dimension(nx,ny) :: area
+ integer,dimension(nx,ny,2) :: fdir
+ integer,allocatable,dimension(:,:) :: positions
+ real,allocatable,dimension(:) :: slopes
+ real :: length,catchment(nx,ny)
+ integer :: i,j,k,l,pos,tmp(1),npos=8
+ integer :: ipos,inew,jnew
+ allocate(positions(npos,2),slopes(npos))
+
+ !Construct positions array
+ pos = 0
+ do k=-1,1
+  do l=-1,1
+   if ((k == 0) .and. (l == 0)) cycle
+   pos = pos + 1
+   positions(pos,1) = k
+   positions(pos,2) = l
+  enddo
+ enddo
+
+ !get flow direction map
+ do i=1,nx
+  do j=1,ny
+   slopes = 0.0
+   do pos=1,npos
+    k = positions(pos,1)
+    l = positions(pos,2)
+    if ((i+k .lt. 1) .or. (j+l .lt. 1) .or. (i+k .gt. nx) .or. &
+        (j+l .gt. ny)) cycle !skip due to on boundary
+    if ((k + l .eq. -2) .or. (k + l .eq. 2) .or. (k + l .eq. 0))then
+        length = 1.41421356237*res
+    else 
+       length = res
+    endif
+    slopes(pos) = (dem(i,j) - dem(i+k,j+l))/length
+   enddo
+   if (maxval(slopes) .gt. 0) then
+    tmp = maxloc(slopes)
+    fdir(i,j,1) = i+positions(tmp(1),1)
+    fdir(i,j,2) = j+positions(tmp(1),2)
+   else
+    fdir(i,j,:) = -9999
+   endif
+  enddo
+ enddo
+
+ !get the cell count
+ catchment(:,:) = 0
+ do i=1,nx
+  do j=1,ny
+   do ipos=1,npos
+    inew = i+positions(ipos,1)
+    jnew = j+positions(ipos,2)
+    if ((inew .lt. 1) .or. (jnew .lt. 1) .or. (inew .gt. nx) .or. (jnew .gt. ny))cycle
+    if (dem(inew,jnew) .gt. dem(i,j))then
+     if ((fdir(inew,jnew,1) .eq. i) .and. (fdir(inew,jnew,2) .eq. j))then
+      catchment(i,j) = catchment(i,j) + variable(i,j)
+     endif
+    endif
+   enddo
+  enddo
+ enddo
+
+ !Calculate accumulation area
+ area = catchment
+
+end subroutine
+
 subroutine calculate_mfd_acc(dem,res,area,nx,ny,p)
 
  implicit none
