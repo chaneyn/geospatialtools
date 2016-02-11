@@ -176,8 +176,18 @@ def create_tiles_kmeans(basins,covariates,ntiles):
 
   #Normalize the data
   for i in xrange(X.shape[1]):
-   X[:,i] = X[:,i]/np.max(X[:,i])
-
+   X[:,i] = (X[:,i]-np.min(X[:,i]))/(np.max(X[:,i])-np.min(X[:,i]))
+   '''argsort = np.argsort(X[:,i])
+   pcts = np.copy(X[:,i])
+   pcts[argsort] = np.linspace(0,1,len(X[:,i]))
+   uniques,counts = np.unique(X[:,i],return_counts=True)
+   for ival in xrange(uniques.size):
+    value = uniques[ival]
+    count = counts[ival]
+    if count <= 10:continue
+    pcts[X[:,i] == value] = np.mean(pcts[X[:,i] == value])
+   X[:,i] = pcts[:]'''
+   
   #Subsample the array
   np.random.seed(1)
   minsamples = 10**5
