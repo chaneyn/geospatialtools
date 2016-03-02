@@ -1013,6 +1013,125 @@ recursive subroutine determine_channel_depth(i,j,channeldepth,cd,fdir,mask,nx,ny
 
 end subroutine
 
+subroutine calculate_depth2ridge(channels,mask,fdir,dem,depth2ridge,nx,ny)
+
+ implicit none
+ integer,intent(in) :: nx,ny
+ integer,intent(in) :: channels(nx,ny),mask(nx,ny),fdir(nx,ny,2)
+ real,intent(in) :: dem(nx,ny)
+ real,intent(out) :: depth2ridge(nx,ny)
+ real :: ridgedepth(nx,ny),re
+ integer :: i,j,inew,jnew,pos,k,l,npos
+ real :: undef = -9.99e+08
+ integer,allocatable,dimension(:,:) :: positions
+ npos = 8
+ allocate(positions(npos,2))
+
+ !Construct positions array
+ pos = 0
+ do k=-1,1
+  do l=-1,1
+   if ((k == 0) .and. (l == 0)) cycle
+   pos = pos + 1
+   positions(pos,1) = k
+   positions(pos,2) = l
+  enddo
+ enddo
+
+ !Initialize the ridge depth array to -9999.0
+ !ridgedepth = dem
+ depth2ridge = undef
+
+ !Mask out all the elevation elements that are not channels
+ !where ((mask .le. 0) .or. (channels .le. 0))
+ ! ridgedepth = undef
+ !endwhere
+
+ !Determine the maximum ridge elevation of a cell that flows into a channel
+ !Iterate cell by cell
+ do i=1,nx
+  do j=1,ny
+   !Determine which way is down
+   inew = fdir(i,j,1)
+   jnew = fdir(i,j,2)
+   if ((inew.lt.1).or.(jnew.lt.1).or.(inew.gt.nx).or.(jnew.gt.ny))cycle
+   if (mask(i,j) .eq. 0)cycle
+   !Determine if it flows into a channel and is not a channel
+   if ((channels(inew,jnew) .gt. 0) .and. (channels(i,j) .le. 0)) then
+    call determine_ridge_elevation(i,j,fdir,nx,ny,positions,dem,re)
+    depth2ridge(i,j) = re
+   endif
+  enddo
+ enddo
+
+ !Now repeat in a similar fashion to depth2channel
+ ridgedepth = depth2ridge
+ !Iterate cell by cell
+ do i=1,nx
+  do j=1,ny
+   !Only work on this cell if the basin id is unknown and the mask is positive
+   if ((ridgedepth(i,j) .eq. undef) .and. (mask(i,j) .ge. 1)&
+       .and. (channels(i,j) .le. 0))  then
+    call determine_ridgedepth(i,j,ridgedepth,re,fdir,mask,nx,ny)
+   endif
+  enddo
+ enddo
+
+ !Calculate the depth2channel by subtracting the channel depth
+ !depth2ridge = dem - ridgedepth
+ depth2ridge = ridgedepth - dem
+ where ((mask .le. 0) .and. (channels .eq. 0))
+  depth2ridge = undef
+ endwhere
+
+end subroutine
+
+recursive subroutine determine_ridgedepth(i,j,ridgedepth,re,fdir,mask,nx,ny)
+
+ implicit none
+ integer,intent(in) :: i,j,nx,ny,fdir(nx,ny,2)
+ integer,intent(inout) :: mask(nx,ny)
+ real,intent(inout) :: re,ridgedepth(nx,ny)
+ integer :: inew,jnew
+ !Determine which way is down
+ inew = fdir(i,j,1)
+ jnew = fdir(i,j,2)
+ if ((inew.lt.1).or.(jnew.lt.1).or.(inew.gt.nx).or.(jnew.gt.ny))return
+ if (mask(i,j) .eq. 0)return
+ !Figure out if downhill has a value if not then recurse. If it does then
+ if (ridgedepth(inew,jnew) .gt. 0)then
+  re = ridgedepth(inew,jnew)
+  ridgedepth(i,j) = re
+ else
+  call determine_ridgedepth(inew,jnew,ridgedepth,re,fdir,mask,nx,ny)
+  ridgedepth(i,j) = re
+ endif
+
+end subroutine
+
+recursive subroutine determine_ridge_elevation(i,j,fdir,nx,ny,positions,dem,re)
+
+ implicit none
+ real,intent(out) :: re
+ integer,intent(in) :: i,j,nx,ny,fdir(nx,ny,2)
+ integer,intent(in) :: positions(8,2)
+ real,intent(inout) :: dem(nx,ny)
+ real :: tmp
+ integer :: inew,jnew,ipos
+ re = dem(i,j)
+ !Go upstream
+ do ipos=1,8
+  inew = i+positions(ipos,1)
+  jnew = j+positions(ipos,2)
+  if ((inew .lt. 1) .or. (jnew .lt. 1) .or. (inew .gt. nx) .or. (jnew.gt.ny))cycle
+  if ((fdir(inew,jnew,1) .eq. i) .and. (fdir(inew,jnew,2) .eq. j))then
+   call determine_ridge_elevation(inew,jnew,fdir,nx,ny,positions,dem,tmp)
+   if (tmp .gt. re)re = tmp
+  endif
+ enddo
+
+end subroutine
+
 subroutine calculate_hillslopesd8(channels,mask,fdir,hillslopes,nx,ny)
 
  implicit none
