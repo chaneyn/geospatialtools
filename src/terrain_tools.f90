@@ -64,6 +64,78 @@ subroutine calculate_d8_acc(dem,res,area,fdir,nx,ny)
 
 end subroutine
 
+subroutine calculate_d8_dir(dem,res,fdir_class,nx,ny)
+
+ implicit none
+ integer,intent(in) :: nx,ny
+ real,intent(in) :: res
+ real,intent(in),dimension(nx,ny) :: dem
+ integer,intent(out),dimension(nx,ny) :: fdir_class
+ integer,allocatable,dimension(:,:) :: positions
+ real,allocatable,dimension(:) :: slopes
+ real :: length
+ integer :: catchment(nx,ny)
+ integer :: i,j,k,l,pos,tmp(1),npos=8
+ allocate(positions(npos,2),slopes(npos))
+
+ !Construct positions array
+ pos = 0
+ do k=-1,1
+  do l=-1,1
+   if ((k == 0) .and. (l == 0)) cycle
+   pos = pos + 1
+   positions(pos,1) = k
+   positions(pos,2) = l
+  enddo
+ enddo
+
+ !get flow direction map
+ do i=1,nx
+  do j=1,ny
+   slopes = 0.0
+   do pos=1,npos
+    k = positions(pos,1)
+    l = positions(pos,2)
+    if ((i+k .lt. 1) .or. (j+l .lt. 1) .or. (i+k .gt. nx) .or. &
+        (j+l .gt. ny)) cycle !skip due to on boundary
+    if ((k + l .eq. -2) .or. (k + l .eq. 2) .or. (k + l .eq. 0))then
+        length = 1.41421356237*res
+    else 
+       length = res
+    endif
+    slopes(pos) = (dem(i,j) - dem(i+k,j+l))/length
+   enddo
+   if (maxval(slopes) .gt. 0) then
+    tmp = maxloc(slopes)
+	
+	if (positions(tmp(1),1) .eq. 1 .and. positions(tmp(1),2) .eq. 1) then
+      fdir_class(i,j) = 2
+  	else if (positions(tmp(1),1) .eq. 1 .and. positions(tmp(1),2) .eq. 0) then
+      fdir_class(i,j) = 1
+	else if (positions(tmp(1),1) .eq. 1 .and. positions(tmp(1),2) .eq. -1) then
+	  fdir_class(i,j) = 8
+	else if (positions(tmp(1),1) .eq. 0 .and. positions(tmp(1),2) .eq. 1) then
+	  fdir_class(i,j) = 3
+	else if (positions(tmp(1),1) .eq. 0 .and. positions(tmp(1),2) .eq. 0) then
+	  fdir_class(i,j) = 0
+	else if (positions(tmp(1),1) .eq. 0 .and. positions(tmp(1),2) .eq. -1) then
+	  fdir_class(i,j) = 7
+	else if (positions(tmp(1),1) .eq. -1 .and. positions(tmp(1),2) .eq. 1) then
+	  fdir_class(i,j) = 4
+  	else if (positions(tmp(1),1) .eq. -1 .and. positions(tmp(1),2) .eq. 0) then
+  	  fdir_class(i,j) = 5
+	else if (positions(tmp(1),1) .eq. -1 .and. positions(tmp(1),2) .eq. -1) then
+	  fdir_class(i,j) = 6
+    endif
+    
+   else
+    fdir_class(i,j) = -9999
+   endif
+  enddo
+ enddo
+
+end subroutine
+
 recursive subroutine neighbr_check_d8(i,j,dem,catchment,fdir,positions,nx,ny,npos)
  
  implicit none

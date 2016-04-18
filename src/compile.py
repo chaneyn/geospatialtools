@@ -5,6 +5,7 @@ os.system('rm -rf *.dSYM')
 #subroutines
 subroutines = 'calculate_d8_acc \
               calculate_d8_acc_alt \
+              calculate_d8_dir \
 	      calculate_d8_acc_neighbors \
               calculate_mfd_acc \
               calculate_channels \
