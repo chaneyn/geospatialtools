@@ -836,20 +836,21 @@ subroutine calculate_basin_properties(basins,res,nb,&
 end subroutine
 
 subroutine calculate_hillslope_properties(hillslopes,dem,basins,res,nh,&
-           latitude,longitude,depth2channel,&
+           latitude,longitude,depth2channel,slope,&
            hillslopes_elevation,hillslopes_area,hillslopes_basin,&
            hillslopes_latitude,hillslopes_longitude,hillslopes_range,&
-           hillslopes_id,hillslopes_depth2channel,&
+           hillslopes_id,hillslopes_depth2channel,hillslopes_slope,&
            nx,ny)
 
  implicit none
  integer,intent(in) :: nx,ny,hillslopes(nx,ny),nh,basins(nx,ny)
  real,intent(in) :: dem(nx,ny),res,latitude(nx,ny),longitude(nx,ny)
- real,intent(in) :: depth2channel(nx,ny)
+ real,intent(in) :: depth2channel(nx,ny),slope(nx,ny)
  integer,intent(out) :: hillslopes_basin(nh),hillslopes_id(nh)
  real,intent(out) :: hillslopes_elevation(nh),hillslopes_area(nh)
  real,intent(out) :: hillslopes_latitude(nh),hillslopes_longitude(nh)
  real,intent(out) :: hillslopes_range(nh),hillslopes_depth2channel(nh)
+ real,intent(out) :: hillslopes_slope(nh)
  real :: hillslopes_maxelev(nh),hillslopes_minelev(nh)
  integer :: hillslopes_count(nh)
  integer :: i,j,ih
@@ -858,6 +859,7 @@ subroutine calculate_hillslope_properties(hillslopes,dem,basins,res,nh,&
  hillslopes_minelev = 9.99e+08
  hillslopes_maxelev = -9.99e+08
  hillslopes_elevation = 0.0
+ hillslopes_slope = 0.0
  hillslopes_latitude = 0.0
  hillslopes_longitude = 0.0
  hillslopes_count = 0
@@ -865,6 +867,7 @@ subroutine calculate_hillslope_properties(hillslopes,dem,basins,res,nh,&
   do j=1,ny
    ih = hillslopes(i,j)
    if (ih .gt. 0)then
+    hillslopes_slope(ih) = hillslopes_slope(ih) + slope(i,j)
     hillslopes_elevation(ih) = hillslopes_elevation(ih) + dem(i,j)
     hillslopes_depth2channel(ih) = hillslopes_depth2channel(ih) + depth2channel(i,j)
     if (dem(i,j) .gt. hillslopes_maxelev(ih))hillslopes_maxelev(ih) = dem(i,j)
@@ -880,6 +883,7 @@ subroutine calculate_hillslope_properties(hillslopes,dem,basins,res,nh,&
  hillslopes_latitude = hillslopes_latitude/hillslopes_count
  hillslopes_longitude = hillslopes_longitude/hillslopes_count
  hillslopes_range = hillslopes_maxelev - hillslopes_minelev
+ hillslopes_slope = hillslopes_slope/hillslopes_count
 
  !Hillslope area
  hillslopes_area = res**2*hillslopes_count
@@ -901,6 +905,33 @@ subroutine calculate_hillslope_properties(hillslopes,dem,basins,res,nh,&
   hillslopes_id(ih) = ih
  enddo
  
+end subroutine
+
+subroutine assign_properties_to_hillslopes(hillslopes,hp_slope,hp_area,slope,area,nx,ny,nh)
+
+ implicit none
+ integer,intent(in) :: nx,ny,nh
+ integer,intent(in) :: hillslopes(nx,ny)
+ real,intent(in) :: hp_slope(nh),hp_area(nh)
+ real,intent(out) :: slope(nx,ny)
+ real,intent(out) :: area(nx,ny)
+ integer :: i,j,undef
+ undef = 0
+
+ !Initialize the new array
+ slope(:,:) = -9999.0
+ area(:,:) = -9999.0
+
+ !Go through and set the ids
+ do i=1,nx
+  do j=1,ny
+   if (hillslopes(i,j) .ne. -9999)then
+    slope(i,j) = hp_slope(hillslopes(i,j))
+    area(i,j) = hp_area(hillslopes(i,j))
+   endif
+  enddo
+ enddo
+
 end subroutine
 
 subroutine cleanup_hillslopes(hillslopes,nx,ny)

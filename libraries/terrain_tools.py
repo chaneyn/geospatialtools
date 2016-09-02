@@ -133,11 +133,11 @@ def reduce_basin_number(basins,bp,nbasins_goal):
  return basins
 
 def calculate_hillslope_properties(hillslopes,dem,basins,res,latitude,
-    longitude,depth2channel):
+    longitude,depth2channel,slope):
 
  nh = np.max(hillslopes)
- (eh,ah,bh,lath,lonh,erange,hid,d2c) = ttf.calculate_hillslope_properties(hillslopes,
-                               dem,basins,res,nh,latitude,longitude,depth2channel)
+ (eh,ah,bh,lath,lonh,erange,hid,d2c,slope) = ttf.calculate_hillslope_properties(hillslopes,
+                               dem,basins,res,nh,latitude,longitude,depth2channel,slope)
  properties = {'elevation':eh,
                'area':ah,
                'basin':bh,
@@ -146,6 +146,7 @@ def calculate_hillslope_properties(hillslopes,dem,basins,res,latitude,
                'range':erange,
                'id':hid,
 	       'd2c':d2c,
+	       'slope':slope,
               }
  #Add aspect,slope,covergence,ids
 

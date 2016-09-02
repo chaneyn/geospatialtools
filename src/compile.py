@@ -11,6 +11,7 @@ subroutines = 'calculate_d8_acc \
               delineate_basins \
               delineate_hillslopes \
               calculate_hillslope_properties \
+              assign_properties_to_hillslopes \
               calculate_basin_properties \
               calculate_depth2channel \
               calculate_depth2ridge \
