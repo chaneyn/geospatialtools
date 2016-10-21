@@ -135,7 +135,7 @@ def reduce_basin_number(basins,bp,nbasins_goal):
 def calculate_hillslope_properties(hillslopes,dem,basins,res,latitude,
     longitude,depth2channel,slope):
 
- nh = np.max(hillslopes)
+ nh = np.max(hillslopes)+1
  (eh,ah,bh,lath,lonh,erange,hid,d2c,slope) = ttf.calculate_hillslope_properties(hillslopes,
                                dem,basins,res,nh,latitude,longitude,depth2channel,slope)
  properties = {'elevation':eh,
@@ -321,8 +321,16 @@ def cluster_hillslopes(hp,hillslopes,nclusters):
  dem = (dem - np.min(dem))/(np.max(dem) - np.min(dem))
  d2c = hp['d2c']
  d2c = (d2c - np.min(d2c))/(np.max(d2c) - np.min(d2c))
- #X = np.array([dem,lats,lons]).T
- X = np.array([lats,lons]).T
+ #covariates = {'area':area,'lats':lats,'lons':lons,'dem':dem,'d2c':d2c}
+ X = []
+ covariates = {'area':area}#,'lats':lats,'lons':lons,'dem':dem,'d2c':d2c}
+ for var in covariates:
+  tmp = covariates[var]
+  tmp[(np.isnan(tmp) == 1) | (np.isinf(tmp) == 1)] = 0.0
+  X.append(tmp)
+ X = np.array(X).T
+ #X = np.array([area,dem,lats,lons]).T
+ #X = np.array([lats,lons]).T
  #X = np.array([area,]).T
  model = sklearn.cluster.KMeans(n_clusters=nclusters)
  clusters = model.fit_predict(X)+1

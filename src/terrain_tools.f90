@@ -1334,7 +1334,11 @@ subroutine calculate_hru_properties(hillslopes,tiles,channels,nhru,res,nhillslop
      if (((tid .gt. tiles(inew,jnew)) &
         .and. (hillslopes(inew,jnew) .eq. hid)) &
         .or. (channels(inew,jnew) .gt. 0)) then
-       tile_bwidth(tid,hid) = tile_bwidth(tid,hid) + 1.0
+       !if ((positions(pos,1) .eq. 0) .or. (positions(pos,2) .eq. 0))then
+        tile_bwidth(tid,hid) = tile_bwidth(tid,hid) + 1.0
+        !tile_bwidth(tid,hid) = tile_bwidth(tid,hid) + 1.0/sqrt(2.0)
+       !else
+       !endif
        exit
      endif
     enddo
@@ -1344,7 +1348,11 @@ subroutine calculate_hru_properties(hillslopes,tiles,channels,nhru,res,nhillslop
      jnew = j + positions(pos,2)
      if ((tid .lt. tiles(inew,jnew)) &
         .and. (hillslopes(inew,jnew) .eq. hid))then
-       tile_twidth(tid,hid) = tile_twidth(tid,hid) + 1.0
+       !if ((positions(pos,1) .eq. 0) .or. (positions(pos,2) .eq. 0))then
+        !tile_twidth(tid,hid) = tile_twidth(tid,hid) + 1.0/sqrt(2.0)
+       !else
+        tile_twidth(tid,hid) = tile_twidth(tid,hid) + 1.0
+       !endif
        exit
      endif
     enddo
