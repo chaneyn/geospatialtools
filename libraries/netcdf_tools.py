@@ -23,7 +23,7 @@ def Create_HDF_File(dims,file,vars,vars_info,tinitial,tstep,nt):
  minlon = dims['minlon']
  minlat = dims['minlat']
  undef = dims['undef']
- t = np.arange(0,nt)
+ t = np.arange(0,nt*tstep,tstep)
 
  #Prepare the netcdf file
  #Create file
@@ -51,7 +51,7 @@ def Create_HDF_File(dims,file,vars,vars_info,tinitial,tstep,nt):
  #Time
  times = f.createVariable('t','d',('t',))
  f.variables['t'][:] = t
- f.variables['t'].units = '%s since %04d-%02d-%02d %02d:00:00.0' % (tstep,tinitial.year,tinitial.month,tinitial.day,tinitial.hour)
+ f.variables['t'].units = 'hours since %04d-%02d-%02d %02d:00:00.0' % (tstep,tinitial.year,tinitial.month,tinitial.day,tinitial.hour)
  f.variables['t'].long_name = 'Time'
 
  #Data
@@ -72,7 +72,7 @@ def Create_NETCDF_File(dims,file,vars,vars_info,tinitial,tstep,nt):
  minlat = dims['minlat']
  undef = dims['undef']
  #chunksizes = dims['chunksize']
- if nt > 0:t = np.arange(0,nt)
+ if nt > 0:t = np.arange(0,nt*tstep,tstep)
 
  #Prepare the netcdf file
  #Create file
@@ -101,7 +101,7 @@ def Create_NETCDF_File(dims,file,vars,vars_info,tinitial,tstep,nt):
  if nt > 0:
   times = f.createVariable('t','d',('t',))
   f.variables['t'][:] = t
-  f.variables['t'].units = '%s since %04d-%02d-%02d %02d:00:00.0' % (tstep,tinitial.year,tinitial.month,tinitial.day,tinitial.hour)
+  f.variables['t'].units = '%s since %04d-%02d-%02d %02d:00:00.0' % ('hours',tinitial.year,tinitial.month,tinitial.day,tinitial.hour)
   f.variables['t'].long_name = 'Time'
 
  #Data

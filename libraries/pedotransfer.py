@@ -58,6 +58,19 @@ def ThetaS_Saxton2006(S,C,OM):
 
  return Theta33 + ThetaS33 - 0.097*S + 0.043
 
+def Lambda_Saxton_2006(S,C,OM):
+
+ Theta1500 = Theta_1500_Saxton2006(S,C,OM)
+ Theta33 = Theta_33_Saxton2006(S,C,OM)
+ return (np.log(Theta33) - np.log(Theta1500))/(np.log(1500) - np.log(33))
+
+def Ksat_Saxton2006(S,C,OM):
+
+ ThetaS = ThetaS_Saxton2006(S,C,OM)
+ Theta33 = Theta_33_Saxton2006(S,C,OM)
+ Lambda = Lambda_Saxton_2006(S,C,OM)
+ return 1930*(ThetaS - Theta33)**(3-Lambda)
+
 def FAO_Soil_Texture(S,C,ST):
 
  ##Coarse  Medium   Fine    CM     CF     MF    CMF
