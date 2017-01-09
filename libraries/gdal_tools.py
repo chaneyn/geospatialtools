@@ -6,21 +6,30 @@ import numpy as np
 import osgeo
 import os
 
-def extract_point_data(file,lats,lons):
+def extract_point_data(file,lats,lons,undef=-9999.0):
  
  #Open file and get geotransformation
  ds = gdal.Open(file)
  gt = ds.GetGeoTransform()
  rb = ds.GetRasterBand(1)
+ nx = ds.RasterXSize
+ ny = ds.RasterYSize
 
  #Compute ilats and ilons
- ilons = np.round((np.array(lons) - gt[0])/gt[1]).astype(np.int)
- ilats = np.round((np.array(lats) - gt[3])/gt[5]).astype(np.int)
+ ilons = np.round((np.array(lons) - (gt[0]+gt[1]/2))/gt[1]).astype(np.int)
+ ilats = np.round((np.array(lats) - (gt[3]+gt[5]/2))/gt[5]).astype(np.int)
+ #ilons = np.round((np.array(lons) - gt[0])/gt[1]).astype(np.int)
+ #ilats = np.round((np.array(lats) - gt[3])/gt[5]).astype(np.int)
 
  #Extract data
  values = []
  for i in xrange(ilons.size):
-  values.append(rb.ReadAsArray(ilons[i],ilats[i],1,1)[0])
+  ilon = ilons[i]
+  ilat = ilats[i]
+  if ((ilon < 0) | (ilon >= nx)) | ((ilat < 0) | (ilat >= ny)):
+   values.append(undef)
+  else:
+   values.append(rb.ReadAsArray(ilon,ilat,1,1)[0][0])
 
  return np.array(values).astype(np.float)
 

@@ -1,18 +1,19 @@
 
-subroutine calculate_d8_acc(dem,res,area,fdir,nx,ny)
+subroutine calculate_d8_acc(dem,mask,res,area,fdir,nx,ny)
 
  implicit none
  integer,intent(in) :: nx,ny
  real,intent(in) :: res
- real,intent(in),dimension(nx,ny) :: dem
+ real,intent(in),dimension(nx,ny) :: dem,mask
  real,intent(out),dimension(nx,ny) :: area
  integer,intent(out),dimension(nx,ny,2) :: fdir
  integer,allocatable,dimension(:,:) :: positions
  real,allocatable,dimension(:) :: slopes
- real :: length
+ real :: length,undef
  integer :: catchment(nx,ny)
  integer :: i,j,k,l,pos,tmp(1),npos=8
  allocate(positions(npos,2),slopes(npos))
+ undef = -9999.0
 
  !Construct positions array
  pos = 0
@@ -46,7 +47,7 @@ subroutine calculate_d8_acc(dem,res,area,fdir,nx,ny)
     fdir(i,j,1) = i+positions(tmp(1),1)
     fdir(i,j,2) = j+positions(tmp(1),2)
    else
-    fdir(i,j,:) = -9999
+    fdir(i,j,:) = undef
    endif
   enddo
  enddo
@@ -61,6 +62,11 @@ subroutine calculate_d8_acc(dem,res,area,fdir,nx,ny)
 
  !Calculate accumulation area
  area = res**2*catchment
+
+ !Where the mask is 0 set area to undefined
+ where (mask .eq. 0)
+  area = undef
+ endwhere
 
 end subroutine
 
@@ -384,10 +390,14 @@ subroutine calculate_channels(area_in,threshold,basin_threshold,fdir,channels,nx
  integer,dimension(:,:),allocatable :: positions
  integer :: i,j,pos,cid,k,l,npos
  logical :: bool
+ real :: undef
+ undef = -9999.0
  npos = 8
  allocate(positions(npos,2))
  !Copy the area array
  area = area_in
+ !Initialize channels to undef
+ channels = undef
 
  !Construct positions array
  pos = 0
@@ -435,6 +445,103 @@ subroutine calculate_channels(area_in,threshold,basin_threshold,fdir,channels,nx
                          mask,basin_threshold,area)
 
  enddo
+
+end subroutine
+
+subroutine calculate_channels_wocean(area_in,threshold,basin_threshold,fdir,mask,channels,nx,ny)
+
+ implicit none
+ integer,intent(in) :: nx,ny
+ real,intent(in) :: threshold,basin_threshold
+ real,intent(in),dimension(nx,ny) :: area_in,mask
+ integer,intent(in),dimension(nx,ny,2) :: fdir
+ integer,intent(out),dimension(nx,ny) :: channels
+ real,dimension(nx,ny) :: area
+ integer,dimension(nx,ny) :: cmask
+ integer,dimension(2) :: placement
+ integer,dimension(:,:),allocatable :: positions
+ integer :: i,j,pos,cid,k,l,npos,imin,imax,jmin,jmax
+ logical :: bool
+ real :: undef
+ undef = -9999.0
+ npos = 8
+ allocate(positions(npos,2))
+ !Copy the area array
+ area = area_in
+ !Initialize channels 
+ channels = 0.0
+
+ !Construct positions array
+ pos = 0
+ do k=-1,1
+  do l=-1,1
+   if ((k == 0) .and. (l == 0)) cycle
+   pos = pos + 1
+   positions(pos,1) = k
+   positions(pos,2) = l
+  enddo
+ enddo
+
+ !Define the channels mask
+ where (area .gt. threshold)
+  cmask = 1
+ elsewhere
+  cmask = 0
+ endwhere
+
+ !Differentiate the channels by segments
+ cid = 1
+ bool = .False.
+ do while (bool .eqv. .False.)
+  
+  !Determine if there are still are cells
+  if (maxval(cmask) .eq. 0) bool = .True.
+
+  !Maskout the area
+  where (cmask .eq. 0) 
+   area = 0
+  endwhere
+
+  !Find the highest accumulation area
+  placement = maxloc(area)
+  i = placement(1)
+  j = placement(2)
+  !Set the channel id
+  if ((cmask(i,j) .eq. 1) .and. (area(i,j) .ge. basin_threshold))then
+   channels(i,j) = cid
+  endif
+  cmask(i,j) = 0
+
+  !Go upstream
+  call channels_upstream(i,j,fdir,channels,positions,nx,ny,cid,npos,&
+                         cmask,basin_threshold,area)
+
+ enddo
+
+ !Set the ocean/land, lake/land, and glacier/land boundaries as "channels"
+ cid = max(maxval(channels),1)
+ do i = 1,nx
+  do j = 1,ny
+   !Determine if this point is not "land"
+   if (mask(i,j) == 0.0) then
+    imin = i-1
+    imax = i+1
+    jmin = j-1
+    jmax = j+1
+    !Determine if any of the surrounding points are land
+    if (i .eq. 1)imin = 1
+    if (i .eq. nx)imax = nx
+    if (j .eq. 1)jmin = 1
+    if (j .eq. ny)jmax = ny
+    if (maxval(mask(imin:imax,jmin:jmax)) .gt. 0)channels(i,j) = cid
+   endif
+  enddo
+ enddo
+
+ !Where the mask is 0 set area to undefined
+ where (((mask .eq. 0) .and. (channels .eq. 0)))! .or. (channels .eq. 0))
+  channels = undef
+ endwhere
 
 end subroutine
 
@@ -966,8 +1073,8 @@ subroutine cleanup_hillslopes(hillslopes,nx,ny)
  hid = 0
  do i=1,size(hids)
   if (hcounts(i) .gt. 0)then
-   hid = hid + 1
    mapping(i) = hid
+   hid = hid + 1
   endif
  enddo
 
@@ -991,11 +1098,16 @@ subroutine calculate_depth2channel(channels,mask,fdir,dem,depth2channel,nx,ny)
  real,intent(out) :: depth2channel(nx,ny)
  real :: channeldepth(nx,ny),cd
  integer :: i,j
- real :: undef = -9.99e+08
+ real :: undef = -9999.0
 
  !Initialize the channel depth array to -9999.0
  channeldepth = dem
  depth2channel = undef
+
+ !If the channeldepth is below 0 then set to 0
+ where(channeldepth .lt. 0)
+  channeldepth = 0.0
+ endwhere
 
  !Mask out all the elevation elements that are not channels
  where ((mask .le. 0) .or. (channels .le. 0))
@@ -1014,10 +1126,16 @@ subroutine calculate_depth2channel(channels,mask,fdir,dem,depth2channel,nx,ny)
 
  !Calculate the depth2channel by subtracting the channel depth
  depth2channel = dem - channeldepth
+
+ !Set any channel depths below 0 to 0 (This is a hack)
+ where (depth2channel .lt. 0) 
+  depth2channel = undef
+ endwhere
+
+ !Set all values that are outside of the mask to undef
  where (mask .le. 0)
   depth2channel = undef
  endwhere
- 
 
 end subroutine
 
@@ -1242,13 +1360,13 @@ subroutine assign_clusters_to_hillslopes(hillslopes_org,clusters,hillslopes_new,
  undef = -9999
 
  !Initialize the new array
- hillslopes_new = hillslopes_org
+ hillslopes_new = undef!hillslopes_org
 
  !Go through and set the ids
  do i=1,nx
   do j=1,ny
    if (hillslopes_org(i,j) .ne. undef)then
-    hillslopes_new(i,j) = clusters(hillslopes_org(i,j))
+    hillslopes_new(i,j) = clusters(hillslopes_org(i,j) + 1)
    endif
   enddo
  enddo
@@ -1327,10 +1445,13 @@ subroutine calculate_hru_properties(hillslopes,tiles,channels,nhru,res,nhillslop
     tile_dem(tid,hid) = tile_dem(tid,hid) + dem(i,j)
     !tile slope
     tile_slope(tid,hid) = tile_slope(tid,hid) + slope(i,j)
+
     !Add to downstream perimeter
     do pos=1,npos
      inew = i + positions(pos,1)
      jnew = j + positions(pos,2)
+     if ((inew .eq. 0) .or. (inew .eq. nx+1))cycle
+     if ((jnew .eq. 0) .or. (jnew .eq. ny+1))cycle
      if (((tid .gt. tiles(inew,jnew)) &
         .and. (hillslopes(inew,jnew) .eq. hid)) &
         .or. (channels(inew,jnew) .gt. 0)) then
@@ -1346,6 +1467,8 @@ subroutine calculate_hru_properties(hillslopes,tiles,channels,nhru,res,nhillslop
     do pos=1,npos
      inew = i + positions(pos,1)
      jnew = j + positions(pos,2)
+     if ((inew .eq. 0) .or. (inew .eq. nx+1))cycle
+     if ((jnew .eq. 0) .or. (jnew .eq. ny+1))cycle
      if ((tid .lt. tiles(inew,jnew)) &
         .and. (hillslopes(inew,jnew) .eq. hid))then
        !if ((positions(pos,1) .eq. 0) .or. (positions(pos,2) .eq. 0))then

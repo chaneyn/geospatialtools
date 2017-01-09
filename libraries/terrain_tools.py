@@ -148,6 +148,12 @@ def calculate_hillslope_properties(hillslopes,dem,basins,res,latitude,
 	       'd2c':d2c,
 	       'slope':slope,
               }
+
+ #Remove nans
+ m = np.isnan(eh) == 0
+ for p in properties:
+  properties[p] = properties[p][m]
+
  #Add aspect,slope,covergence,ids
 
  return properties
@@ -178,16 +184,6 @@ def create_tiles_kmeans(basins,covariates,ntiles):
   #Normalize the data
   for i in xrange(X.shape[1]):
    X[:,i] = (X[:,i]-np.min(X[:,i]))/(np.max(X[:,i])-np.min(X[:,i]))
-   '''argsort = np.argsort(X[:,i])
-   pcts = np.copy(X[:,i])
-   pcts[argsort] = np.linspace(0,1,len(X[:,i]))
-   uniques,counts = np.unique(X[:,i],return_counts=True)
-   for ival in xrange(uniques.size):
-    value = uniques[ival]
-    count = counts[ival]
-    if count <= 10:continue
-    pcts[X[:,i] == value] = np.mean(pcts[X[:,i] == value])
-   X[:,i] = pcts[:]'''
    
   #Subsample the array
   np.random.seed(1)
@@ -237,7 +233,8 @@ def create_nd_histogram(hillslopes,covariates):
  hrus[:] = -9999
 
  #Iterate through each hillslope making the hrus
- uh = np.unique(hillslopes)[1::]
+ uh = np.unique(hillslopes)
+ uh = uh[uh != -9999]
  for ih in uh:
   mask = hillslopes == ih
 
@@ -251,7 +248,7 @@ def create_nd_histogram(hillslopes,covariates):
 
   #Create the histogram
   H,edges = np.histogramdd(data,bins=bins)
-  H = H/np.sum(H)
+  H = H/np.sum(H) 
 
   #Create a dictionary of hru info
   clusters = {}
@@ -281,7 +278,8 @@ def create_hillslope_tiles(hillslopes,depth2channel,nbins):
 
  #Define the clusters for each hillslope
  clusters = np.copy(hillslopes)
- uh = np.unique(hillslopes)[1::]
+ uh = np.unique(hillslopes)
+ uh = uh[uh != -9999]
  for ih in uh:
   mask = hillslopes == ih
   (hist,bins) = np.histogram(depth2channel[mask],bins=nbins)
@@ -293,7 +291,9 @@ def create_hillslope_tiles(hillslopes,depth2channel,nbins):
 
 def calculate_hru_properties(hillslopes,tiles,channels,res,nhillslopes,hrus,depth2channel,slope):
 
- nhru = np.unique(hrus)[1::].size
+ tmp = np.unique(hrus)
+ tmp = tmp[tmp != -9999]
+ nhru = tmp.size
  (wb,wt,l,hru_position,hid,tid,hru,hru_area,hru_dem,hru_slope) = ttf.calculate_hru_properties(hillslopes,tiles,channels,nhru,res,nhillslopes,hrus,depth2channel,slope)
  hru_properties = {'width_bottom':wb,
                    'width_top':wt,
@@ -308,32 +308,20 @@ def calculate_hru_properties(hillslopes,tiles,channels,res,nhillslopes,hrus,dept
 
  return hru_properties
                        
-def cluster_hillslopes(hp,hillslopes,nclusters):
+#def cluster_hillslopes(hp,hillslopes,nclusters,covariates):
+def cluster_hillslopes(hillslopes,nclusters,covariates):
 
  import sklearn.cluster
- area = hp['area']
- area = (area - np.min(area))/(np.max(area) - np.min(area))
- lats = hp['latitude']
- lats = (lats - np.min(lats))/(np.max(lats) - np.min(lats))
- lons = hp['longitude']
- lons = (lons - np.min(lons))/(np.max(lons) - np.min(lons))
- dem = hp['elevation']
- dem = (dem - np.min(dem))/(np.max(dem) - np.min(dem))
- d2c = hp['d2c']
- d2c = (d2c - np.min(d2c))/(np.max(d2c) - np.min(d2c))
- #covariates = {'area':area,'lats':lats,'lons':lons,'dem':dem,'d2c':d2c}
  X = []
- covariates = {'area':area}#,'lats':lats,'lons':lons,'dem':dem,'d2c':d2c}
  for var in covariates:
   tmp = covariates[var]
   tmp[(np.isnan(tmp) == 1) | (np.isinf(tmp) == 1)] = 0.0
   X.append(tmp)
  X = np.array(X).T
- #X = np.array([area,dem,lats,lons]).T
- #X = np.array([lats,lons]).T
- #X = np.array([area,]).T
  model = sklearn.cluster.KMeans(n_clusters=nclusters)
  clusters = model.fit_predict(X)+1
+ #Clean up the hillslopes
+ ttf.cleanup_hillslopes(hillslopes)
  #Assign the new ids to each hillslpe
  hillslopes_clusters = ttf.assign_clusters_to_hillslopes(hillslopes,clusters)
  #Determine the number of hillslopes per cluster

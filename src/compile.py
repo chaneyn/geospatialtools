@@ -7,7 +7,9 @@ subroutines = 'calculate_d8_acc \
               calculate_d8_acc_alt \
 	      calculate_d8_acc_neighbors \
               calculate_mfd_acc \
+              cleanup_hillslopes \
               calculate_channels \
+              calculate_channels_wocean \
               delineate_basins \
               delineate_hillslopes \
               calculate_hillslope_properties \
