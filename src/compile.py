@@ -20,10 +20,11 @@ subroutines = 'calculate_d8_acc \
               calculate_hillslopesd8 \
               assign_clusters_to_hillslopes \
               calculate_hru_properties \
-              retrieve_basin_properties'
+              retrieve_basin_properties \
+              gap_fill_hrus'
 
 #Create library
-cmd = 'f2py -c only: %s : -m terrain_tools_fortran terrain_tools.f90 -lgomp --fcompiler=gnu95 --f90flags="-w -fopenmp -O3"' % subroutines
+cmd = 'f2py -c only: %s : -m terrain_tools_fortran terrain_tools.f90 -lgomp --fcompiler=gnu95 --f90flags="-Wall -pedantic -fopenmp -O3"' % subroutines
 print cmd
 os.system(cmd)
 

@@ -133,11 +133,12 @@ def reduce_basin_number(basins,bp,nbasins_goal):
  return basins
 
 def calculate_hillslope_properties(hillslopes,dem,basins,res,latitude,
-    longitude,depth2channel,slope):
+    longitude,depth2channel,slope,c2n,maxsmc,g2t):
 
  nh = np.max(hillslopes)+1
- (eh,ah,bh,lath,lonh,erange,hid,d2c,slope) = ttf.calculate_hillslope_properties(hillslopes,
-                               dem,basins,res,nh,latitude,longitude,depth2channel,slope)
+ (eh,ah,bh,lath,lonh,erange,hid,d2c,slope,hmaxsmc,hc2n,hg2t) = ttf.calculate_hillslope_properties(hillslopes,
+                               dem,basins,res,nh,latitude,longitude,depth2channel,slope,c2n,maxsmc,
+                               g2t)
  properties = {'elevation':eh,
                'area':ah,
                'basin':bh,
@@ -147,6 +148,9 @@ def calculate_hillslope_properties(hillslopes,dem,basins,res,latitude,
                'id':hid,
 	       'd2c':d2c,
 	       'slope':slope,
+               'c2n':hc2n,
+               'g2t':hg2t,
+               'maxsmc':hmaxsmc
               }
 
  #Remove nans
@@ -222,27 +226,40 @@ def create_tiles_kmeans(basins,covariates,ntiles):
 
 def create_nd_histogram(hillslopes,covariates):
 
- #Define the mask
- mask = hillslopes > 0
+ undef = -9999.0
+ #Construct the mask
+ m = hillslopes != undef
+ for var in covariates:
+  m = m & (covariates[var]['data'] != -9999.0)
  
  #Initialize the cluster number
  icluster = -1
 
  #Initialize the hru map
- hrus = np.empty(covariates[covariates.keys()[0]]['data'].shape).astype(np.int32)
+ hrus = np.empty(covariates[covariates.keys()[0]]['data'].shape).astype(np.float32)
  hrus[:] = -9999
 
  #Iterate through each hillslope making the hrus
  uh = np.unique(hillslopes)
  uh = uh[uh != -9999]
  for ih in uh:
-  mask = hillslopes == ih
+  mask = (hillslopes == ih) & m
 
   #Define the data and the bins
   bins,data = [],[]
   for var in covariates:
    bins.append(covariates[var]['nbins'])
-   data.append(covariates[var]['data'][mask])
+   #Convert the data to percentiles if necessary
+   if covariates[var]['type'] == 'p':
+    tmp = np.copy(covariates[var]['data'][mask])
+    argsort = np.argsort(tmp)
+    tmp[argsort] = np.linspace(0,1,tmp.size)
+    #Have this data replace the covariate information 
+    covariates[var]['data'][mask] = tmp
+   else:
+    tmp = np.copy(covariates[var]['data'][mask])
+   data.append(tmp)
+   #data.append(covariates[var]['data'][mask])
   bins = np.array(bins)
   data = np.array(data).T
 
@@ -272,20 +289,37 @@ def create_nd_histogram(hillslopes,covariates):
    idx = eval('np.where(%s)' % string)
    hrus[idx] = cid + 1
 
+ #Cleanup the hrus
+ hrus = np.array(hrus,order='f').astype(np.int32)
+ ttf.cleanup_hillslopes(hrus)
+ hrus[hrus >= 0] = hrus[hrus >= 0] + 1
+
  return hrus
 
 def create_hillslope_tiles(hillslopes,depth2channel,nbins):
 
+ undef = -9999.0
+ #Construct the mask
+ m = (hillslopes != undef) & (depth2channel != undef)
+
  #Define the clusters for each hillslope
  clusters = np.copy(hillslopes)
  uh = np.unique(hillslopes)
- uh = uh[uh != -9999]
+ uh = uh[uh != undef]
  for ih in uh:
-  mask = hillslopes == ih
-  (hist,bins) = np.histogram(depth2channel[mask],bins=nbins)
+  mask = (hillslopes == ih) & m
+  tmp = np.copy(depth2channel[mask])
+  argsort = np.argsort(tmp)
+  tmp[argsort] = np.linspace(0,1,tmp.size)
+  (hist,bins) = np.histogram(tmp,bins=nbins)
   for ibin in xrange(nbins):
    smask = mask & (depth2channel >= bins[ibin]) & (depth2channel <= bins[ibin+1])
    clusters[smask] = ibin+1
+
+ #Cleanup the tiles
+ clusters = np.array(clusters,order='f').astype(np.int32)
+ ttf.cleanup_hillslopes(clusters)
+ clusters[clusters >= 0] = clusters[clusters >= 0] + 1
 
  return clusters
 
@@ -318,9 +352,11 @@ def cluster_hillslopes(hillslopes,nclusters,covariates):
   tmp[(np.isnan(tmp) == 1) | (np.isinf(tmp) == 1)] = 0.0
   X.append(tmp)
  X = np.array(X).T
- model = sklearn.cluster.KMeans(n_clusters=nclusters)
+ state = 35799#80098
+ model = sklearn.cluster.KMeans(n_clusters=nclusters,random_state=state)
  clusters = model.fit_predict(X)+1
  #Clean up the hillslopes
+ hillslopes = np.array(hillslopes,order='f').astype(np.int32)
  ttf.cleanup_hillslopes(hillslopes)
  #Assign the new ids to each hillslpe
  hillslopes_clusters = ttf.assign_clusters_to_hillslopes(hillslopes,clusters)
