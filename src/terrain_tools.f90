@@ -1460,6 +1460,7 @@ subroutine calculate_hru_properties(hillslopes,tiles,channels,nhru,res,nhillslop
  integer,allocatable,dimension(:,:) :: positions
  real,allocatable,dimension(:,:) :: tile_bwidth,tile_twidth,tile_length,tile_area
  real,allocatable,dimension(:,:) :: tile_dem,tile_slope,tile_position
+ real,allocatable,dimension(:,:) :: tile_min_d2c,tile_max_d2c
  real :: hru_frac(nhru)
  npos = 8
  allocate(positions(npos,2))
@@ -1481,7 +1482,7 @@ subroutine calculate_hru_properties(hillslopes,tiles,channels,nhru,res,nhillslop
  !Allocate and initialize the tile arrays
  allocate(tile_bwidth(ntile,nc),tile_twidth(ntile,nc),tile_length(ntile,nc),&!
           tile_area(ntile,nc),tile_dem(ntile,nc),tile_slope(ntile,nc),&!
-          tile_position(ntile,nc))
+          tile_position(ntile,nc),tile_min_d2c(ntile,nc),tile_max_d2c(ntile,nc))
  tile_bwidth = 0.0
  tile_twidth = 0.0
  tile_length = 0.0
@@ -1489,6 +1490,8 @@ subroutine calculate_hru_properties(hillslopes,tiles,channels,nhru,res,nhillslop
  tile_dem = 0.0
  tile_slope = 0.0
  tile_position = 0.0
+ tile_max_d2c = -9999.0
+ tile_min_d2c = 9999.0
  hru_area = 0.0
 
  !Initialize the properties for each tile
@@ -1517,6 +1520,10 @@ subroutine calculate_hru_properties(hillslopes,tiles,channels,nhru,res,nhillslop
     tile_slope(tid,hid) = tile_slope(tid,hid) + slope(i,j)
     !hru area
     hru_area(hru) = hru_area(hru) + res**2.0/nhillslope(hid)
+
+    !Compute max/min d2c
+    if (dem(i,j) .gt. tile_max_d2c(tid,hid))tile_max_d2c(tid,hid) = dem(i,j)
+    if (dem(i,j) .lt. tile_min_d2c(tid,hid))tile_min_d2c(tid,hid) = dem(i,j)
 
     !Add to downstream perimeter
     do pos=1,npos
@@ -1557,6 +1564,7 @@ subroutine calculate_hru_properties(hillslopes,tiles,channels,nhru,res,nhillslop
 
  do i = 1,ntile
   do j = 1,nc
+   print*,tile_min_d2c(i,j),tile_max_d2c(i,j)
    !Calculate the average hillslope properties
    tile_bwidth(i,j) = res*tile_bwidth(i,j)/nhillslope(j)
    tile_twidth(i,j) = res*tile_twidth(i,j)/nhillslope(j)
