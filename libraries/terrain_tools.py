@@ -329,11 +329,11 @@ def create_hillslope_tiles(hillslopes,depth2channel,nbins):
  for ih in uh:
   mask = (hillslopes == ih) & m
   tmp = np.copy(depth2channel[mask])
-  print np.unique(tmp)
   argsort = np.argsort(tmp)
   tmp[argsort] = np.linspace(0,1,tmp.size)
-  (hist,bins) = np.histogram(tmp,bins=nbins)
-  for ibin in xrange(nbins):
+  depth2channel[mask] = tmp
+  (hist,bins) = np.histogram(tmp,bins=nbins[ih-1])
+  for ibin in xrange(nbins[ih-1]):
    smask = mask & (depth2channel >= bins[ibin]) & (depth2channel <= bins[ibin+1])
    clusters[smask] = ibin+1
 
@@ -343,6 +343,36 @@ def create_hillslope_tiles(hillslopes,depth2channel,nbins):
  clusters[clusters >= 0] = clusters[clusters >= 0] + 1
 
  return clusters
+
+def create_hrus(hillslopes,htiles,covariates,nclusters):
+
+ import sklearn.cluster
+ hrus = np.copy(hillslopes)
+ hrus[:] = -9999
+ #Iterate through each hillslope and tile and compute hrus
+ uhs = np.unique(hillslopes)
+ uhs = uhs[uhs != -9999]
+ maxc = 1
+ for uh in uhs:
+  mh = hillslopes == uh
+  uts = np.unique(htiles[mh])
+  for ut in uts:
+   mt = mh & (htiles == ut)
+   #prepare the covariate data
+   X = []
+   for var in covariates:
+    tmp = covariates[var][mt]
+    tmp[(np.isnan(tmp) == 1) | (np.isinf(tmp) == 1)] = 0.0
+    X.append(tmp)
+   #cluster the data
+   X = np.array(X).T
+   state = 35799
+   model = sklearn.cluster.KMeans(n_clusters=nclusters,random_state=state)
+   clusters = model.fit_predict(X)+maxc
+   hrus[mt] = clusters
+   maxc = np.max(clusters)+1
+
+ return hrus
 
 def calculate_hru_properties(hillslopes,tiles,channels,res,nhillslopes,hrus,depth2channel,slope,basins):
 
