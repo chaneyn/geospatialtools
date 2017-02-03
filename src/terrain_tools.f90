@@ -463,7 +463,7 @@ subroutine gap_fill_hrus(hrus_in,channels,hrus_out,nx,ny)
  !Iterate through each point (cid = 999999 is shoreline)
  do i = 1,nx
   do j = 1,ny
-   if ((channels(i,j) .gt. 0) .and. (channels(i,j) .ne. 999999))then
+   if ((channels(i,j) .gt. 0) .and. (channels(i,j) .lt. 999999))then
     imin = i-1
     imax = i+1
     jmin = j-1
@@ -587,6 +587,7 @@ subroutine calculate_channels_wocean(area_in,threshold,basin_threshold,fdir,mask
     if (j .eq. 1)jmin = 1
     if (j .eq. ny)jmax = ny
     if (maxval(mask(imin:imax,jmin:jmax)) .gt. 0)channels(i,j) = cid
+    cid = cid + 1
    endif
   enddo
  enddo
@@ -1002,31 +1003,56 @@ end subroutine
 
 subroutine calculate_hillslope_properties(hillslopes,dem,basins,res,nh,&
            latitude,longitude,depth2channel,slope,c2n,maxsmc,g2t,&
+           aspect,cprof,cplan,channels,&
            hillslopes_elevation,hillslopes_area,hillslopes_basin,&
            hillslopes_latitude,hillslopes_longitude,hillslopes_range,&
            hillslopes_id,hillslopes_depth2channel,hillslopes_slope,&
            hillslopes_maxsmc,hillslopes_c2n,hillslopes_g2t,&
+           hillslopes_aspect,hillslopes_cplan,hillslopes_cprof,&
+           hillslopes_maxelev,hillslopes_minelev,&
+           hillslopes_twidth,hillslopes_bwidth,&
            nx,ny)
 
  implicit none
- integer,intent(in) :: nx,ny,hillslopes(nx,ny),nh,basins(nx,ny)
+ integer,intent(in) :: nx,ny,hillslopes(nx,ny),nh,basins(nx,ny),channels(nx,ny)
  real,intent(in) :: dem(nx,ny),res,latitude(nx,ny),longitude(nx,ny)
  real,intent(in) :: depth2channel(nx,ny),slope(nx,ny),c2n(nx,ny),maxsmc(nx,ny),g2t(nx,ny)
+ real,intent(in) :: aspect(nx,ny),cplan(nx,ny),cprof(nx,ny)
  integer,intent(out) :: hillslopes_basin(nh),hillslopes_id(nh)
  real,intent(out) :: hillslopes_elevation(nh),hillslopes_area(nh)
  real,intent(out) :: hillslopes_latitude(nh),hillslopes_longitude(nh)
  real,intent(out) :: hillslopes_range(nh),hillslopes_depth2channel(nh)
  real,intent(out) :: hillslopes_slope(nh),hillslopes_maxsmc(nh)
  real,intent(out) :: hillslopes_c2n(nh),hillslopes_g2t(nh)
- real :: hillslopes_maxelev(nh),hillslopes_minelev(nh)
+ real,intent(out) :: hillslopes_aspect(nh),hillslopes_cplan(nh),hillslopes_cprof(nh)
+ real,intent(out) :: hillslopes_maxelev(nh),hillslopes_minelev(nh)
+ real,intent(out) :: hillslopes_bwidth(nh),hillslopes_twidth(nh)
  integer :: hillslopes_count(nh)
- integer :: i,j,ih
+ integer :: i,j,ih,inew,jnew,pos,k,l,npos
+ integer :: positions(8,2)
+
+ !Construct positions array
+ npos = 8
+ pos = 0
+ do k=-1,1
+  do l=-1,1
+   if ((k == 0) .and. (l == 0)) cycle
+   pos = pos + 1
+   positions(pos,1) = k
+   positions(pos,2) = l
+  enddo
+ enddo
 
  !Hillslope elevation,latitude,longitude
- hillslopes_minelev = 9.99e+08
- hillslopes_maxelev = -9.99e+08
+ hillslopes_bwidth = 0.0
+ hillslopes_twidth = 0.0
+ hillslopes_minelev = 9999.0
+ hillslopes_maxelev = -9999.0
  hillslopes_elevation = 0.0
  hillslopes_slope = 0.0
+ hillslopes_aspect = 0.0
+ hillslopes_cplan = 0.0
+ hillslopes_cprof = 0.0
  hillslopes_latitude = 0.0
  hillslopes_longitude = 0.0
  hillslopes_count = 0
@@ -1040,14 +1066,43 @@ subroutine calculate_hillslope_properties(hillslopes,dem,basins,res,nh,&
     hillslopes_slope(ih) = hillslopes_slope(ih) + slope(i,j)
     hillslopes_elevation(ih) = hillslopes_elevation(ih) + dem(i,j)
     hillslopes_depth2channel(ih) = hillslopes_depth2channel(ih) + depth2channel(i,j)
-    if (dem(i,j) .gt. hillslopes_maxelev(ih))hillslopes_maxelev(ih) = dem(i,j)
-    if (dem(i,j) .lt. hillslopes_minelev(ih))hillslopes_minelev(ih) = dem(i,j)
+    if (dem(i,j) .ne. -9999.0)then
+     if (dem(i,j) .gt. hillslopes_maxelev(ih))hillslopes_maxelev(ih) = dem(i,j)
+     if (dem(i,j) .lt. hillslopes_minelev(ih))hillslopes_minelev(ih) = dem(i,j)
+    endif
     hillslopes_latitude(ih) = hillslopes_latitude(ih) + latitude(i,j)
     hillslopes_longitude(ih) = hillslopes_longitude(ih) + longitude(i,j)
     hillslopes_count(ih) = hillslopes_count(ih) + 1
     hillslopes_c2n(ih) = hillslopes_c2n(ih) + c2n(i,j) 
     hillslopes_g2t(ih) = hillslopes_g2t(ih) +  g2t(i,j)
     hillslopes_maxsmc(ih) = hillslopes_maxsmc(ih) + maxsmc(i,j)
+    hillslopes_aspect(ih) = hillslopes_aspect(ih) + aspect(i,j)
+    hillslopes_cplan(ih) = hillslopes_cplan(ih) + cplan(i,j)
+    hillslopes_cprof(ih) = hillslopes_cprof(ih) + cprof(i,j)
+    !Add to downstream perimeter
+    do pos=1,npos
+     inew = i + positions(pos,1)
+     jnew = j + positions(pos,2)
+     if ((inew .eq. 0) .or. (inew .eq. nx+1))cycle
+     if ((jnew .eq. 0) .or. (jnew .eq. ny+1))cycle
+     !if ((hillslopes(inew,jnew) .ne. ih) .and. (channels(inew,jnew) .gt. 0)) then
+     if (channels(inew,jnew) .gt. 0) then
+       hillslopes_bwidth(ih) = hillslopes_bwidth(ih) + 1.0
+       exit
+     endif
+    enddo
+    !Add to upstream perimeter
+    do pos=1,npos
+     inew = i + positions(pos,1)
+     jnew = j + positions(pos,2)
+     if ((inew .eq. 0) .or. (inew .eq. nx+1))cycle
+     if ((jnew .eq. 0) .or. (jnew .eq. ny+1))cycle
+     !if ((hillslopes(inew,jnew) .ne. ih) .or. (basins(inew,jnew) .ne. basins(i,j))) then
+     if (basins(inew,jnew) .ne. basins(i,j)) then
+       hillslopes_twidth(ih) = hillslopes_twidth(ih) + 1.0
+       exit
+     endif
+    enddo
    endif
   enddo
  enddo
@@ -1057,6 +1112,9 @@ subroutine calculate_hillslope_properties(hillslopes,dem,basins,res,nh,&
  hillslopes_longitude = hillslopes_longitude/hillslopes_count
  hillslopes_range = hillslopes_maxelev - hillslopes_minelev
  hillslopes_slope = hillslopes_slope/hillslopes_count
+ hillslopes_aspect = hillslopes_aspect/hillslopes_count
+ hillslopes_cplan = hillslopes_cplan/hillslopes_count
+ hillslopes_cprof = hillslopes_cprof/hillslopes_count
  hillslopes_c2n = hillslopes_c2n/hillslopes_count
  hillslopes_g2t = hillslopes_g2t/hillslopes_count
  hillslopes_maxsmc = hillslopes_maxsmc/hillslopes_count
@@ -1442,7 +1500,7 @@ subroutine assign_clusters_to_hillslopes(hillslopes_org,clusters,hillslopes_new,
 
 end subroutine
 
-subroutine calculate_hru_properties(hillslopes,tiles,channels,nhru,res,nhillslope,&
+subroutine calculate_hru_properties(hillslopes,tiles,channels,basins,nhru,res,nhillslope,&
            hrus,dem,slope,&
            hru_bwidth,hru_twidth,hru_length,hru_position,&
            hru_hid,hru_tid,hru_id,hru_area,hru_dem,hru_slope,&
@@ -1450,7 +1508,7 @@ subroutine calculate_hru_properties(hillslopes,tiles,channels,nhru,res,nhillslop
 
  implicit none
  integer,intent(in) :: nx,ny,nhru,nc,nhillslope(nc)
- integer,intent(in) :: hillslopes(nx,ny),tiles(nx,ny),channels(nx,ny),hrus(nx,ny)
+ integer,intent(in) :: hillslopes(nx,ny),tiles(nx,ny),channels(nx,ny),hrus(nx,ny),basins(nx,ny)
  real,intent(in) :: dem(nx,ny),slope(nx,ny)
  real,intent(in) :: res
  real,intent(out) :: hru_bwidth(nhru),hru_twidth(nhru),hru_length(nhru)
@@ -1460,7 +1518,9 @@ subroutine calculate_hru_properties(hillslopes,tiles,channels,nhru,res,nhillslop
  integer,allocatable,dimension(:,:) :: positions
  real,allocatable,dimension(:,:) :: tile_bwidth,tile_twidth,tile_length,tile_area
  real,allocatable,dimension(:,:) :: tile_dem,tile_slope,tile_position
+ real,allocatable,dimension(:,:) :: tile_bd2c,tile_td2c,tile_width
  real,allocatable,dimension(:,:) :: tile_min_d2c,tile_max_d2c
+ integer,allocatable,dimension(:,:) :: tile_bcount,tile_tcount
  real :: hru_frac(nhru)
  npos = 8
  allocate(positions(npos,2))
@@ -1482,16 +1542,23 @@ subroutine calculate_hru_properties(hillslopes,tiles,channels,nhru,res,nhillslop
  !Allocate and initialize the tile arrays
  allocate(tile_bwidth(ntile,nc),tile_twidth(ntile,nc),tile_length(ntile,nc),&!
           tile_area(ntile,nc),tile_dem(ntile,nc),tile_slope(ntile,nc),&!
-          tile_position(ntile,nc),tile_min_d2c(ntile,nc),tile_max_d2c(ntile,nc))
+          tile_position(ntile,nc),tile_bcount(ntile,nc),tile_tcount(ntile,nc),&
+          tile_bd2c(ntile,nc),tile_td2c(ntile,nc),tile_width(ntile,nc),&
+          tile_min_d2c(ntile,nc),tile_max_d2c(ntile,nc))
+ tile_max_d2c = -9999.0
+ tile_min_d2c = 9999.0
  tile_bwidth = 0.0
  tile_twidth = 0.0
+ tile_width = 0.0
  tile_length = 0.0
  tile_area = 0.0
  tile_dem = 0.0
  tile_slope = 0.0
  tile_position = 0.0
- tile_max_d2c = -9999.0
- tile_min_d2c = 9999.0
+ tile_td2c = 0.0
+ tile_bd2c = 0.0
+ tile_tcount = 0
+ tile_bcount = 0
  hru_area = 0.0
 
  !Initialize the properties for each tile
@@ -1534,11 +1601,9 @@ subroutine calculate_hru_properties(hillslopes,tiles,channels,nhru,res,nhillslop
      if (((tid .gt. tiles(inew,jnew)) &
         .and. (hillslopes(inew,jnew) .eq. hid)) &
         .or. (channels(inew,jnew) .gt. 0)) then
-       !if ((positions(pos,1) .eq. 0) .or. (positions(pos,2) .eq. 0))then
-        tile_bwidth(tid,hid) = tile_bwidth(tid,hid) + 1.0
-        !tile_bwidth(tid,hid) = tile_bwidth(tid,hid) + 1.0/sqrt(2.0)
-       !else
-       !endif
+       tile_bwidth(tid,hid) = tile_bwidth(tid,hid) + 1.0
+       tile_bd2c(tid,hid) = tile_bd2c(tid,hid) + dem(i,j)
+       tile_bcount(tid,hid) = tile_bcount(tid,hid) + 1
        exit
      endif
     enddo
@@ -1549,12 +1614,11 @@ subroutine calculate_hru_properties(hillslopes,tiles,channels,nhru,res,nhillslop
      if ((inew .eq. 0) .or. (inew .eq. nx+1))cycle
      if ((jnew .eq. 0) .or. (jnew .eq. ny+1))cycle
      if ((tid .lt. tiles(inew,jnew)) &
-        .and. (hillslopes(inew,jnew) .eq. hid))then
-       !if ((positions(pos,1) .eq. 0) .or. (positions(pos,2) .eq. 0))then
-        !tile_twidth(tid,hid) = tile_twidth(tid,hid) + 1.0/sqrt(2.0)
-       !else
-        tile_twidth(tid,hid) = tile_twidth(tid,hid) + 1.0
-       !endif
+        .and. (hillslopes(inew,jnew) .eq. hid) &
+        .or. (basins(inew,jnew) .ne. basins(i,j))) then
+       tile_twidth(tid,hid) = tile_twidth(tid,hid) + 1.0
+       tile_td2c(tid,hid) = tile_td2c(tid,hid) + dem(i,j)
+       tile_tcount(tid,hid) = tile_tcount(tid,hid) + 1
        exit
      endif
     enddo
@@ -1564,13 +1628,28 @@ subroutine calculate_hru_properties(hillslopes,tiles,channels,nhru,res,nhillslop
 
  do i = 1,ntile
   do j = 1,nc
-   print*,tile_min_d2c(i,j),tile_max_d2c(i,j)
    !Calculate the average hillslope properties
-   tile_bwidth(i,j) = res*tile_bwidth(i,j)/nhillslope(j)
-   tile_twidth(i,j) = res*tile_twidth(i,j)/nhillslope(j)
+   tile_bd2c(i,j) = tile_bd2c(i,j)/tile_bcount(i,j)
+   tile_td2c(i,j) = tile_td2c(i,j)/tile_tcount(i,j)
    tile_dem(i,j) = tile_dem(i,j)/tile_area(i,j)
    tile_slope(i,j) = tile_slope(i,j)/tile_area(i,j)
+   !tile_bwidth(i,j) = res*tile_bwidth(i,j)/tile_area(i,j)!/nhillslope(j)
+   !tile_twidth(i,j) = res*tile_twidth(i,j)/tile_area(i,j)!/nhillslope(j)
+   tile_bwidth(i,j) = res*tile_bwidth(i,j)/nhillslope(j)
+   tile_twidth(i,j) = res*tile_twidth(i,j)/nhillslope(j)
+   !tile_area(i,j) = res**2.0!*tile_area(i,j)!/nhillslope(j)
    tile_area(i,j) = res**2.0*tile_area(i,j)/nhillslope(j)
+   !Compute the length
+   !tile_length(i,j) = (tile_td2c(i,j)-tile_bd2c(i,j))/tile_slope(i,j)
+   !tile_length(i,j) = (tile_max_d2c(i,j)-tile_min_d2c(i,j))/tile_slope(i,j)
+   !tile_width(i,j) = tile_area(i,j)/tile_length(i,j)
+   !print*,'n0',tile_td2c(i,j)-tile_bd2c(i,j)
+   !print*,'n:',tile_length(i,j),tile_width(i,j),(tile_max_d2c(i,j)-tile_min_d2c(i,j))
+   !tile_bwidth(i,j) = res*tile_bwidth(i,j)!/nhillslope(j)
+   !tile_twidth(i,j) = res*tile_twidth(i,j)!/nhillslope(j)
+   !tile_dem(i,j) = tile_dem(i,j)/tile_area(i,j)
+   !tile_slope(i,j) = tile_slope(i,j)/tile_area(i,j)
+   !tile_area(i,j) = res**2.0*tile_area(i,j)/nhillslope(j)
    !Where missing set it to the previous
    if (tile_twidth(i,j) .eq. 0.0) tile_twidth(i,j) = tile_twidth(i-1,j)
    if (tile_bwidth(i,j) .eq. 0.0) tile_bwidth(i,j) = tile_bwidth(i-1,j)

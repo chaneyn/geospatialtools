@@ -133,12 +133,10 @@ def reduce_basin_number(basins,bp,nbasins_goal):
  return basins
 
 def calculate_hillslope_properties(hillslopes,dem,basins,res,latitude,
-    longitude,depth2channel,slope,c2n,maxsmc,g2t):
+    longitude,depth2channel,slope,c2n,maxsmc,g2t,aspect,cplan,cprof,channels):
 
  nh = np.max(hillslopes)+1
- (eh,ah,bh,lath,lonh,erange,hid,d2c,slope,hmaxsmc,hc2n,hg2t) = ttf.calculate_hillslope_properties(hillslopes,
-                               dem,basins,res,nh,latitude,longitude,depth2channel,slope,c2n,maxsmc,
-                               g2t)
+ (eh,ah,bh,lath,lonh,erange,hid,d2c,slope,hmaxsmc,hc2n,hg2t,haspect,hcplan,hcprof,hmaxd2c,hmind2c,htwidth,hbwidth) = ttf.calculate_hillslope_properties(hillslopes,dem,basins,res,nh,latitude,longitude,depth2channel,slope,c2n,maxsmc,g2t,aspect,cplan,cprof,channels)
  properties = {'elevation':eh,
                'area':ah,
                'basin':bh,
@@ -150,7 +148,14 @@ def calculate_hillslope_properties(hillslopes,dem,basins,res,latitude,
 	       'slope':slope,
                'c2n':hc2n,
                'g2t':hg2t,
-               'maxsmc':hmaxsmc
+               'maxsmc':hmaxsmc,
+               'aspect':haspect,
+               'cplan':hcplan,
+               'cprof':hcprof,
+               'mind2c':hmind2c,
+               'maxd2c':hmaxd2c,
+               'twidth':htwidth,
+               'bwidth':hbwidth,
               }
 
  #Remove nans
@@ -158,7 +163,22 @@ def calculate_hillslope_properties(hillslopes,dem,basins,res,latitude,
  for p in properties:
   properties[p] = properties[p][m]
 
- #Add aspect,slope,covergence,ids
+ #Compute the hillslope lengths (the 30 accounts for the beginning and end)
+ a = properties['maxd2c'] - properties['mind2c']
+ b = a/properties['slope'] + res
+ properties['length'] = (a**2 + b**2)**0.5
+
+ #Compute the ratio of width top to bottom
+ properties['twidth'][properties['twidth'] == 0] = 1
+ properties['bwidth'][properties['bwidth'] == 0] = 1
+ properties['twidth'] = res*properties['twidth']
+ properties['bwidth'] = res*properties['bwidth']
+ r = properties['twidth']/properties['bwidth']
+ #Restrict to 10/1
+ m = r > 10
+ r[m] = 10
+ properties['twidth'][m] = 10*properties['bwidth'][m]
+ properties['rwidth'] = r
 
  return properties
 
@@ -323,12 +343,12 @@ def create_hillslope_tiles(hillslopes,depth2channel,nbins):
 
  return clusters
 
-def calculate_hru_properties(hillslopes,tiles,channels,res,nhillslopes,hrus,depth2channel,slope):
+def calculate_hru_properties(hillslopes,tiles,channels,res,nhillslopes,hrus,depth2channel,slope,basins):
 
  tmp = np.unique(hrus)
  tmp = tmp[tmp != -9999]
  nhru = tmp.size
- (wb,wt,l,hru_position,hid,tid,hru,hru_area,hru_dem,hru_slope) = ttf.calculate_hru_properties(hillslopes,tiles,channels,nhru,res,nhillslopes,hrus,depth2channel,slope)
+ (wb,wt,l,hru_position,hid,tid,hru,hru_area,hru_dem,hru_slope) = ttf.calculate_hru_properties(hillslopes,tiles,channels,basins,nhru,res,nhillslopes,hrus,depth2channel,slope)
  hru_properties = {'width_bottom':wb,
                    'width_top':wt,
                    'hillslope_length':l,
@@ -343,7 +363,7 @@ def calculate_hru_properties(hillslopes,tiles,channels,res,nhillslopes,hrus,dept
  return hru_properties
                        
 #def cluster_hillslopes(hp,hillslopes,nclusters,covariates):
-def cluster_hillslopes(hillslopes,nclusters,covariates):
+def cluster_hillslopes(hillslopes,nclusters,covariates,hp_in):
 
  import sklearn.cluster
  X = []
@@ -367,5 +387,15 @@ def cluster_hillslopes(hillslopes,nclusters,covariates):
   nhillslopes.append(np.sum(clusters == cluster))
  nhillslopes = np.array(nhillslopes)
 
- return (hillslopes_clusters,nhillslopes)
+ #Compute the average value for each cluster of each property
+ hp_out = {}
+ for cluster in uclusters:
+  m = clusters == cluster
+  for var in hp_in:
+   if var not in hp_out:hp_out[var] = []
+   hp_out[var].append(np.mean(hp_in[var][m]))
+ for var in hp_out:
+  hp_out[var] = np.array(hp_out[var])
+ 
+ return (hillslopes_clusters,nhillslopes,hp_out)
 
