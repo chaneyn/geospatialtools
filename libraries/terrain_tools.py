@@ -329,6 +329,7 @@ def create_hillslope_tiles(hillslopes,depth2channel,nbins):
  for ih in uh:
   mask = (hillslopes == ih) & m
   tmp = np.copy(depth2channel[mask])
+  print np.unique(tmp)
   argsort = np.argsort(tmp)
   tmp[argsort] = np.linspace(0,1,tmp.size)
   (hist,bins) = np.histogram(tmp,bins=nbins)
