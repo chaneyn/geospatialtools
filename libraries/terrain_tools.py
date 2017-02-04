@@ -133,10 +133,10 @@ def reduce_basin_number(basins,bp,nbasins_goal):
  return basins
 
 def calculate_hillslope_properties(hillslopes,dem,basins,res,latitude,
-    longitude,depth2channel,slope,c2n,maxsmc,g2t,aspect,cplan,cprof,channels):
+    longitude,depth2channel,slope,aspect,cplan,cprof,channels):
 
  nh = np.max(hillslopes)+1
- (eh,ah,bh,lath,lonh,erange,hid,d2c,slope,hmaxsmc,hc2n,hg2t,haspect,hcplan,hcprof,hmaxd2c,hmind2c,htwidth,hbwidth) = ttf.calculate_hillslope_properties(hillslopes,dem,basins,res,nh,latitude,longitude,depth2channel,slope,c2n,maxsmc,g2t,aspect,cplan,cprof,channels)
+ (eh,ah,bh,lath,lonh,erange,hid,d2c,slope,haspect,hcplan,hcprof,hmaxd2c,hmind2c,htwidth,hbwidth) = ttf.calculate_hillslope_properties(hillslopes,dem,basins,res,nh,latitude,longitude,depth2channel,slope,aspect,cplan,cprof,channels)
  properties = {'elevation':eh,
                'area':ah,
                'basin':bh,
@@ -146,9 +146,9 @@ def calculate_hillslope_properties(hillslopes,dem,basins,res,latitude,
                'id':hid,
 	       'd2c':d2c,
 	       'slope':slope,
-               'c2n':hc2n,
-               'g2t':hg2t,
-               'maxsmc':hmaxsmc,
+               #'c2n':hc2n,
+               #'g2t':hg2t,
+               #'maxsmc':hmaxsmc,
                'aspect':haspect,
                'cplan':hcplan,
                'cprof':hcprof,
@@ -166,7 +166,8 @@ def calculate_hillslope_properties(hillslopes,dem,basins,res,latitude,
  #Compute the hillslope lengths (the 30 accounts for the beginning and end)
  a = properties['maxd2c'] - properties['mind2c']
  b = a/properties['slope'] + res
- properties['length'] = (a**2 + b**2)**0.5
+ properties['length'] = b
+ #properties['length'] = (a**2 + b**2)**0.5
 
  #Compute the ratio of width top to bottom
  properties['twidth'][properties['twidth'] == 0] = 1
@@ -316,7 +317,7 @@ def create_nd_histogram(hillslopes,covariates):
 
  return hrus
 
-def create_hillslope_tiles(hillslopes,depth2channel,nbins):
+def create_hillslope_tiles(hillslopes,depth2channel,nbins,bins):
 
  undef = -9999.0
  #Construct the mask
@@ -334,6 +335,9 @@ def create_hillslope_tiles(hillslopes,depth2channel,nbins):
   depth2channel[mask] = tmp
   (hist,bins) = np.histogram(tmp,bins=nbins[ih-1])
   for ibin in xrange(nbins[ih-1]):
+   #if ibin == 0:smask = mask & (depth2channel >= np.min(tmp)) & (depth2channel <= bins[ih-1][ibin+1])
+   #elif ibin == nbins[ih-1]-1:smask = mask & (depth2channel >= bins[ih-1][ibin]) & (depth2channel <= np.max(tmp))
+   #else: smask = mask & (depth2channel >= bins[ih-1][ibin]) & (depth2channel <= bins[ih-1][ibin+1])
    smask = mask & (depth2channel >= bins[ibin]) & (depth2channel <= bins[ibin+1])
    clusters[smask] = ibin+1
 
@@ -363,6 +367,9 @@ def create_hrus(hillslopes,htiles,covariates,nclusters):
    for var in covariates:
     tmp = covariates[var][mt]
     tmp[(np.isnan(tmp) == 1) | (np.isinf(tmp) == 1)] = 0.0
+    #Convert to percentiles
+    argsort = np.argsort(tmp)
+    tmp[argsort] = np.linspace(0,1,tmp.size)
     X.append(tmp)
    #cluster the data
    X = np.array(X).T
@@ -420,7 +427,9 @@ def cluster_hillslopes(hillslopes,nclusters,covariates,hp_in):
 
  #Compute the average value for each cluster of each property
  hp_out = {}
+ hp_out['hid'] = []
  for cluster in uclusters:
+  hp_out['hid'].append(cluster)
   m = clusters == cluster
   for var in hp_in:
    if var not in hp_out:hp_out[var] = []
@@ -429,4 +438,41 @@ def cluster_hillslopes(hillslopes,nclusters,covariates,hp_in):
   hp_out[var] = np.array(hp_out[var])
  
  return (hillslopes_clusters,nhillslopes,hp_out)
+
+def curate_hru_properties(hru_properties,hp):
+
+ #Iterate per hillslope
+ for hid in hp['hid']:
+  m = hru_properties['hillslope_id'] == hid
+  #redo the length
+  (d2c,idx) = np.unique(hru_properties['depth2channel'][m],return_inverse=True)
+  #Calculate the update properties
+  hlength = hp['length'][hid-1]/d2c.size*np.ones(d2c.size)
+  hpos = np.cumsum(hlength) - hlength[0]/2
+  helev = hp['slope'][hid-1]*hpos
+  slope = hp['slope'][hid-1]/d2c.size*np.ones(d2c.size)
+  width = np.linspace(1,hp['rwidth'][hid-1],d2c.size+1)
+  twidth = width[1:]
+  bwidth = width[0:-1]
+  #Iterate through elevation layer to adjust the widths
+  otwidth = hru_properties['width_top'][m]
+  ntwidth = twidth[idx]
+  nbwidth = bwidth[idx]
+  for i in xrange(d2c.size):
+   m1 = ntwidth == twidth[i]
+   frac = otwidth[m1]/np.sum(otwidth[m1])
+   ntwidth[m1] = frac*ntwidth[m1]
+   nbwidth[m1] = frac*nbwidth[m1]
+  twidth = ntwidth
+  bwidth = nbwidth
+
+  #Place the parameters
+  hru_properties['hillslope_length'][m] = hlength[idx]
+  hru_properties['slope'][m] = slope[idx]
+  hru_properties['depth2channel'][m] = helev[idx]
+  hru_properties['hillslope_position'][m] = hpos[idx]
+  hru_properties['width_top'][m] = twidth[idx]
+  hru_properties['width_bottom'][m] = bwidth[idx]
+
+ return hru_properties
 
