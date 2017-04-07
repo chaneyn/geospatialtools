@@ -1,5 +1,11 @@
 import netCDF4 as netcdf
+from dateutil.relativedelta import relativedelta
 import numpy as np
+
+def to_relativedelta(tdelta):
+ 
+ return relativedelta(seconds=int(tdelta.total_seconds()),
+                         microseconds=tdelta.microseconds)
 
 def datetime2gradstime(date):
 
@@ -63,16 +69,26 @@ def Create_HDF_File(dims,file,vars,vars_info,tinitial,tstep,nt):
 
  return f
 
-def Create_NETCDF_File(dims,file,vars,vars_info,tinitial,tstep,nt):
+def Create_NETCDF_File(md):
 
- nlat = dims['nlat']
- nlon = dims['nlon']
- res = dims['res']
- minlon = dims['minlon']
- minlat = dims['minlat']
- undef = dims['undef']
- #chunksizes = dims['chunksize']
- if nt > 0:t = np.arange(0,nt*tstep,tstep)
+ nlat = md['nlat']
+ nlon = md['nlon']
+ res = md['res']
+ minlon = md['minlon'] + res/2
+ minlat = md['minlat'] + res/2
+ undef = md['undef']
+ nt = md['nt']
+ tstep = md['tstep']
+ tinitial = md['tinitial']
+ tinitial_all = md['tinitial_all']
+ vars = md['vars']
+ if 'vars_info' in md:vars_info = md['vars_info']
+ else:vars_info = vars
+ file = md['file']
+
+ #Determine the initial it
+ it = int((tinitial-tinitial_all).total_seconds()/3600.0)
+ if nt > 0:t = np.arange(it,nt+it)
 
  #Prepare the netcdf file
  #Create file
@@ -81,7 +97,7 @@ def Create_NETCDF_File(dims,file,vars,vars_info,tinitial,tstep,nt):
  #Define dimensions
  f.createDimension('lon',nlon)
  f.createDimension('lat',nlat)
- if nt > 0:f.createDimension('t',len(t))
+ if nt > 0:f.createDimension('t',None)#len(t))
 
  #Longitude
  f.createVariable('lon','d',('lon',))
@@ -101,14 +117,13 @@ def Create_NETCDF_File(dims,file,vars,vars_info,tinitial,tstep,nt):
  if nt > 0:
   times = f.createVariable('t','d',('t',))
   f.variables['t'][:] = t
-  f.variables['t'].units = '%s since %04d-%02d-%02d %02d:00:00.0' % ('hours',tinitial.year,tinitial.month,tinitial.day,tinitial.hour)
+  f.variables['t'].units = '%s since %04d-%02d-%02d %02d:00:00.0' % ('hours',tinitial_all.year,tinitial_all.month,tinitial_all.day,tinitial_all.hour)
   f.variables['t'].long_name = 'Time'
 
  #Data
  i = 0
  for var in vars:
   if nt > 0:f.createVariable(var,'f',('t','lat','lon'),fill_value=undef)
-                   #chunksizes=chunksizes)
   else: f.createVariable(var,'f',('lat','lon'),fill_value=undef)
   f.variables[var].long_name = vars_info[i]
   i = i + 1

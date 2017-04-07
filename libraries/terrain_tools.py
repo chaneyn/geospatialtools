@@ -1,7 +1,118 @@
 #Import all the functions from the fortran library
 import numpy as np
 import terrain_tools_fortran as ttf
+import metrics 
 import sklearn.cluster
+import copy
+
+def normalize_variable(data):
+
+ m = data != -9999
+ if (np.max(data[m]) != np.min(data[m])):
+  data[m] = (data[m] - np.min(data[m]))/(np.max(data[m]) - np.min(data[m]))
+ else:
+  data[m] = 0.0
+
+ return data
+
+def cluster(X,nc):
+
+ #Assemble sample list`
+ np.random.seed(1)
+ minsamples = 10**5
+ if X.shape[0] > minsamples:
+  idx = np.random.choice(np.arange(X.shape[0]),minsamples)
+ else:
+  idx = np.arange(X.shape[0])
+
+ #Cluster the data
+ model = sklearn.cluster.KMeans(n_clusters=nc)
+ model.fit(X[idx,:])
+
+ return model.predict(X)
+
+def compute_performance_metrics(Xd,data):
+
+ #Evaluate performance
+ maes = []
+ tmp = np.copy(data).astype(np.float32)
+ for var in Xd:
+  tmp[:] = -9999
+  ucs = np.unique(data)
+  for uc in ucs:
+   m = data == uc
+   tmp[m] = np.mean(Xd[var]['d'][m])
+  maes.append(metrics.MAE(Xd[var]['d'],tmp))
+
+ return np.array(maes)
+
+def compute_cluster_parameters(Xd):
+
+ #Assemble tolerances
+ tols = []
+ for var in Xd:
+  tols.append(Xd[var]['t'])
+ tols = np.array(tols)
+
+ #Initialize weights
+ ws = np.ones(len(Xd.keys()))
+
+ #Initialize maes
+ maes0 = 2*tols
+
+ #Initialize parameters
+ nc = 1
+ flag = False
+ ncl = 0
+ ncr = 0
+ count = 0
+ size = tols.size
+
+ while flag == False:
+
+  #0.Prepare the data
+  X = []
+  for var in Xd:
+   tmp = normalize_variable(np.copy(Xd[var]['d']))
+   tmp = ws[Xd.keys().index(var)]*tmp#(tmp-np.min(tmp))/(np.max(tmp)-np.min(tmp))
+   X.append(tmp)
+  X = np.array(X).T
+  #1.Cluster data
+  data = cluster(X,nc)
+  #2.Compute the performance metrics
+  maes = compute_performance_metrics(Xd,data)
+  #3.Determine the next step
+  #print ncl,nc,ncr,maes,ws,size,np.sum(maes > tols)
+  #if (np.sum(maes <= tols) == maes.size) & (ncr - ncl == 1):
+  if (ncr - ncl == 1):
+   break
+  elif (np.sum(maes > tols) < size) & (nc <= 8) & (count < 10):
+   rc = 0.01*(maes - tols)/tols
+   ws = ws + rc
+   ws[ws < 0] = 0#10**-10
+   ws = ws/np.sum(ws)
+   size = np.sum(ws > 0)
+   count += 1
+  elif (np.sum(maes <= tols) == maes.size) & (ncr == 0):
+   ncr = nc
+   nc = int(np.ceil((float(ncl) + float(ncr))/2))
+   count = 0
+  elif (np.sum(maes > tols) <= size) & (ncr == 0):
+   ncl = nc
+   nc = 2*nc
+   count = 0
+  elif (np.sum(maes <= tols) == maes.size) & (ncr != 0):
+   ncr = nc
+   nc = int(np.ceil((float(ncl) + float(ncr))/2))
+   count = 0
+  elif (np.sum(maes > tols) <= size) & (ncr != 0):
+   ncl = nc
+   nc = int(np.ceil((float(ncl) + float(ncr))/2))
+   count = 0
+  #4.Save some information for next iteration
+  maes0[:] = maes[:]
+
+ return (nc,ws)
 
 def compute_basin_delineation_nbasins(dem,mask,res,nbasins):
 
@@ -163,6 +274,10 @@ def calculate_hillslope_properties(hillslopes,dem,basins,res,latitude,
  for p in properties:
   properties[p] = properties[p][m]
 
+ #Ensure the sloep values are not too large
+ m = properties['slope'] > 0.4
+ properties['slope'][m] = 0.4
+
  #Compute the hillslope lengths (the 30 accounts for the beginning and end)
  a = properties['maxd2c'] - properties['mind2c']
  b = a/properties['slope'] + res
@@ -176,9 +291,9 @@ def calculate_hillslope_properties(hillslopes,dem,basins,res,latitude,
  properties['bwidth'] = res*properties['bwidth']
  r = properties['twidth']/properties['bwidth']
  #Restrict to 10/1
- m = r > 10
- r[m] = 10
- properties['twidth'][m] = 10*properties['bwidth'][m]
+ m = r > 3
+ r[m] = 3
+ properties['twidth'][m] = 3*properties['bwidth'][m]
  properties['rwidth'] = r
 
  return properties
@@ -350,6 +465,10 @@ def create_hillslope_tiles(hillslopes,depth2channel,nbins,bins):
 
 def create_hrus(hillslopes,htiles,covariates,nclusters):
 
+ #Curate the covariates
+ for var in covariates: 
+  val = np.mean(covariates[var]['d'][covariates[var]['d'] != -9999])
+  covariates[var]['d'][covariates[var]['d'] == -9999] = val
  import sklearn.cluster
  hrus = np.copy(hillslopes)
  hrus[:] = -9999
@@ -362,22 +481,37 @@ def create_hrus(hillslopes,htiles,covariates,nclusters):
   uts = np.unique(htiles[mh])
   for ut in uts:
    mt = mh & (htiles == ut)
+   #Compute the parameters for the clustering algorithm
+   ccp = {}
+   for var in covariates:
+    tmp = covariates[var]['d'][mt]
+    ccp[var] = {'d':tmp,'t':covariates[var]['t']}
+   (nc,ws) = compute_cluster_parameters(ccp)
+   print 'hillslope: %d, tile: %d, nc: %d' % (uh,ut,nc)
+   #Add weights to covariates
+   for var in covariates:
+    covariates[var]['w'] = ws[ccp.keys().index(var)]
    #prepare the covariate data
    X = []
    for var in covariates:
-    tmp = covariates[var][mt]
-    tmp[(np.isnan(tmp) == 1) | (np.isinf(tmp) == 1)] = 0.0
+    #Normalize and apply weight
+    tmp = covariates[var]['w']*normalize_variable(covariates[var]['d'][mt])
+    #tmp[(np.isnan(tmp) == 1) | (np.isinf(tmp) == 1)] = 0.0
     #Convert to percentiles
-    argsort = np.argsort(tmp)
-    tmp[argsort] = np.linspace(0,1,tmp.size)
+    #argsort = np.argsort(tmp)
+    #tmp[argsort] = np.linspace(0,1,tmp.size)
     X.append(tmp)
    #cluster the data
    X = np.array(X).T
    state = 35799
-   model = sklearn.cluster.KMeans(n_clusters=nclusters,random_state=state)
+   model = sklearn.cluster.KMeans(n_clusters=nc,random_state=state)
    clusters = model.fit_predict(X)+maxc
    hrus[mt] = clusters
    maxc = np.max(clusters)+1
+
+ #Cleanup hillslopes
+ ttf.cleanup_hillslopes(hrus)
+ hrus[hrus >= 0] = hrus[hrus >= 0] + 1
 
  return hrus
 
@@ -387,6 +521,7 @@ def calculate_hru_properties(hillslopes,tiles,channels,res,nhillslopes,hrus,dept
  tmp = tmp[tmp != -9999]
  nhru = tmp.size
  (wb,wt,l,hru_position,hid,tid,hru,hru_area,hru_dem,hru_slope) = ttf.calculate_hru_properties(hillslopes,tiles,channels,basins,nhru,res,nhillslopes,hrus,depth2channel,slope)
+ #Curate (everyone must have info)
  hru_properties = {'width_bottom':wb,
                    'width_top':wt,
                    'hillslope_length':l,
@@ -396,18 +531,31 @@ def calculate_hru_properties(hillslopes,tiles,channels,res,nhillslopes,hrus,dept
                    'hru':hru,
                    'area':hru_area,
                    'slope':hru_slope,
-                   'depth2channel':hru_dem}
+                   'depth2channel':hru_dem,
+                   'frac':hru_area/np.sum(hru_area)}
 
  return hru_properties
                        
 #def cluster_hillslopes(hp,hillslopes,nclusters,covariates):
-def cluster_hillslopes(hillslopes,nclusters,covariates,hp_in):
+def cluster_hillslopes(hillslopes,covariates,hp_in,nclusters,ws):
+
+ #Add weights to covariates
+ for var in covariates:
+  covariates[var]['w'] = ws[covariates.keys().index(var)]
 
  import sklearn.cluster
  X = []
  for var in covariates:
-  tmp = covariates[var]
-  tmp[(np.isnan(tmp) == 1) | (np.isinf(tmp) == 1)] = 0.0
+  otmp = np.copy(covariates[var]['d'])
+  otmp[(np.isnan(otmp) == 1) | (np.isinf(otmp) == 1)] = 0.0
+  tmp = np.copy(otmp)
+  #Normalize and apply weight
+  tmp = covariates[var]['w']*(tmp-np.min(tmp))/(np.max(tmp)-np.min(tmp))
+  #Convert to percentiles
+  #argsort = np.argsort(tmp)
+  #tmp[argsort] = np.linspace(0,1,tmp.size)
+  #Group all the 0s together
+  #tmp[otmp == 0.0] = np.mean(tmp[otmp == 0.0])
   X.append(tmp)
  X = np.array(X).T
  state = 35799#80098
@@ -431,9 +579,15 @@ def cluster_hillslopes(hillslopes,nclusters,covariates,hp_in):
  for cluster in uclusters:
   hp_out['hid'].append(cluster)
   m = clusters == cluster
+  #Compute fraction dependent on area of hillslope
+  frac = hp_in['area'][m]/np.sum(hp_in['area'][m])
   for var in hp_in:
    if var not in hp_out:hp_out[var] = []
-   hp_out[var].append(np.mean(hp_in[var][m]))
+   #hp_out[var].append(np.median(hp_in[var][m]))
+   hp_out[var].append(np.sum(frac*hp_in[var][m]))
+  #Calculate the fraction
+  if 'frac' not in hp_out:hp_out['frac'] = []
+  hp_out['frac'].append(np.sum(hp_in['area'][m])/np.sum(hp_in['area']))
  for var in hp_out:
   hp_out[var] = np.array(hp_out[var])
  
@@ -441,38 +595,57 @@ def cluster_hillslopes(hillslopes,nclusters,covariates,hp_in):
 
 def curate_hru_properties(hru_properties,hp):
 
+ #hp['length'][:] = 1000.0
+ #hp['slope'][:] = 0.1
+ #hp['rwidth'][:] = 1.0
  #Iterate per hillslope
+ hru_properties['wspec'] = np.copy(hru_properties['slope'])
+ hru_properties['wspec'][:] = 0.0
  for hid in hp['hid']:
   m = hru_properties['hillslope_id'] == hid
+  if np.sum(m) == 0:continue
   #redo the length
   (d2c,idx) = np.unique(hru_properties['depth2channel'][m],return_inverse=True)
-  #Calculate the update properties
+  #Calculate the update properties for the elevation tiles
   hlength = hp['length'][hid-1]/d2c.size*np.ones(d2c.size)
+  width = np.linspace(1,hp['rwidth'][hid-1],d2c.size+1)
+  w0 = (width[1:]+width[0:-1])/2
+  #Compute the fractions
+  f0 = hlength*w0/np.sum(hlength*w0)
+  f1 = []
+  tids = hru_properties['tile_id'][m]
+  for tid in np.unique(tids):
+   m1 = (tids == tid)
+   f1.append(np.sum(hru_properties['area'][m][m1]/np.sum(hru_properties['area'][m])))
+  f1 = np.array(f1)
+  #Correct the width and length to ensure f1 is met
+  hlength = (f1/f0)**0.5*hlength
+  w1 = (f1/f0)**0.5*w0
   hpos = np.cumsum(hlength) - hlength[0]/2
   helev = hp['slope'][hid-1]*hpos
-  slope = hp['slope'][hid-1]/d2c.size*np.ones(d2c.size)
-  width = np.linspace(1,hp['rwidth'][hid-1],d2c.size+1)
-  twidth = width[1:]
-  bwidth = width[0:-1]
-  #Iterate through elevation layer to adjust the widths
-  otwidth = hru_properties['width_top'][m]
-  ntwidth = twidth[idx]
-  nbwidth = bwidth[idx]
-  for i in xrange(d2c.size):
-   m1 = ntwidth == twidth[i]
-   frac = otwidth[m1]/np.sum(otwidth[m1])
-   ntwidth[m1] = frac*ntwidth[m1]
-   nbwidth[m1] = frac*nbwidth[m1]
-  twidth = ntwidth
-  bwidth = nbwidth
+  slope = hp['slope'][hid-1]*np.ones(d2c.size)
+  twidth = w1/w0*width[1:]
+  bwidth = w1/w0*width[0:-1]
+  #Split up the relevant information among the intra-elevation tiles
+  utids = np.unique(tids)
+  t1,b1 = [],[]
+  for it in xrange(utids.size):
+   m1 = tids == utids[it]
+   f = hru_properties['area'][m][m1]/np.sum(hru_properties['area'][m][m1])
+   t1 = t1 + list(twidth[it]*f)
+   b1 = b1 + list(bwidth[it]*f)
+  t1 = np.array(t1)
+  b1 = np.array(b1)
+  wspec = (t1+b1)/2
 
   #Place the parameters
   hru_properties['hillslope_length'][m] = hlength[idx]
   hru_properties['slope'][m] = slope[idx]
   hru_properties['depth2channel'][m] = helev[idx]
   hru_properties['hillslope_position'][m] = hpos[idx]
-  hru_properties['width_top'][m] = twidth[idx]
-  hru_properties['width_bottom'][m] = bwidth[idx]
+  hru_properties['width_top'][m] = twidth[idx]#twidth
+  hru_properties['width_bottom'][m] = bwidth[idx]#bwidth
+  hru_properties['wspec'][m] = wspec[:] #weighted width
 
  return hru_properties
 

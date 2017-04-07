@@ -1614,7 +1614,6 @@ subroutine calculate_hru_properties(hillslopes,tiles,channels,basins,nhru,res,nh
  hru_id = 0
  hru_hid = 0
  hru_tid = 0 
- 
  !Iterate through each tile to compute the properties
  do i=1,nx
   do j=1,ny
