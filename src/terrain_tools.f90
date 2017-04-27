@@ -1053,13 +1053,14 @@ end subroutine
 
 subroutine calculate_hillslope_properties(hillslopes,dem,basins,res,nh,&
            latitude,longitude,depth2channel,slope,&
-           aspect,cprof,cplan,channels,&
+           aspect,cprof,cplan,channels,tas,prec,&
            hillslopes_elevation,hillslopes_area,hillslopes_basin,&
            hillslopes_latitude,hillslopes_longitude,hillslopes_range,&
            hillslopes_id,hillslopes_depth2channel,hillslopes_slope,&
            hillslopes_aspect,hillslopes_cplan,hillslopes_cprof,&
            hillslopes_maxelev,hillslopes_minelev,&
-           hillslopes_twidth,hillslopes_bwidth,&
+           hillslopes_twidth,hillslopes_bwidth,hillslopes_tas,&
+           hillslopes_prec,&
            nx,ny)
 
  implicit none
@@ -1067,6 +1068,7 @@ subroutine calculate_hillslope_properties(hillslopes,dem,basins,res,nh,&
  real,intent(in) :: dem(nx,ny),res,latitude(nx,ny),longitude(nx,ny)
  real,intent(in) :: depth2channel(nx,ny),slope(nx,ny)!,c2n(nx,ny),maxsmc(nx,ny),g2t(nx,ny)
  real,intent(in) :: aspect(nx,ny),cplan(nx,ny),cprof(nx,ny)
+ real,intent(in) :: tas(nx,ny),prec(nx,ny)
  integer,intent(out) :: hillslopes_basin(nh),hillslopes_id(nh)
  real,intent(out) :: hillslopes_elevation(nh),hillslopes_area(nh)
  real,intent(out) :: hillslopes_latitude(nh),hillslopes_longitude(nh)
@@ -1076,6 +1078,7 @@ subroutine calculate_hillslope_properties(hillslopes,dem,basins,res,nh,&
  real,intent(out) :: hillslopes_aspect(nh),hillslopes_cplan(nh),hillslopes_cprof(nh)
  real,intent(out) :: hillslopes_maxelev(nh),hillslopes_minelev(nh)
  real,intent(out) :: hillslopes_bwidth(nh),hillslopes_twidth(nh)
+ real,intent(out) :: hillslopes_tas(nh),hillslopes_prec(nh)
  integer :: hillslopes_count(nh)
  integer :: i,j,ih,inew,jnew,pos,k,l,npos
  integer :: positions(8,2)
@@ -1102,6 +1105,8 @@ subroutine calculate_hillslope_properties(hillslopes,dem,basins,res,nh,&
  hillslopes_aspect = 0.0
  hillslopes_cplan = 0.0
  hillslopes_cprof = 0.0
+ hillslopes_tas = 0.0
+ hillslopes_prec = 0.0
  hillslopes_latitude = 0.0
  hillslopes_longitude = 0.0
  hillslopes_count = 0
@@ -1128,6 +1133,8 @@ subroutine calculate_hillslope_properties(hillslopes,dem,basins,res,nh,&
     hillslopes_aspect(ih) = hillslopes_aspect(ih) + aspect(i,j)
     hillslopes_cplan(ih) = hillslopes_cplan(ih) + cplan(i,j)
     hillslopes_cprof(ih) = hillslopes_cprof(ih) + cprof(i,j)
+    hillslopes_tas(ih) = hillslopes_tas(ih) + tas(i,j)
+    hillslopes_prec(ih) = hillslopes_prec(ih) + prec(i,j)
     !Add to downstream perimeter
     do pos=1,npos
      inew = i + positions(pos,1)
@@ -1164,6 +1171,8 @@ subroutine calculate_hillslope_properties(hillslopes,dem,basins,res,nh,&
  hillslopes_aspect = hillslopes_aspect/hillslopes_count
  hillslopes_cplan = hillslopes_cplan/hillslopes_count
  hillslopes_cprof = hillslopes_cprof/hillslopes_count
+ hillslopes_tas = hillslopes_tas/hillslopes_count
+ hillslopes_prec = hillslopes_prec/hillslopes_count
  !hillslopes_c2n = hillslopes_c2n/hillslopes_count
  !hillslopes_g2t = hillslopes_g2t/hillslopes_count
  !hillslopes_maxsmc = hillslopes_maxsmc/hillslopes_count

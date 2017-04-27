@@ -5,46 +5,73 @@ import metrics
 import sklearn.cluster
 import copy
 
-def normalize_variable(data):
+def normalize_variable(input,min,max):
 
+ data = np.copy(input)
  m = data != -9999
- if (np.max(data[m]) != np.min(data[m])):
-  data[m] = (data[m] - np.min(data[m]))/(np.max(data[m]) - np.min(data[m]))
+ #if (np.max(data[m]) != np.min(data[m])):
+ # data[m] = (data[m] - np.min(data[m]))/(np.max(data[m]) - np.min(data[m]))
+ if (max != min):
+  data[m] = (data[m] - min)/(max-min)
  else:
   data[m] = 0.0
 
  return data
 
-def cluster(X,nc):
+def cluster_data(X,nc):
 
  #Assemble sample list`
- np.random.seed(1)
  minsamples = 10**5
  if X.shape[0] > minsamples:
+  np.random.seed(1245)
   idx = np.random.choice(np.arange(X.shape[0]),minsamples)
+  #idx = np.arange(X.shape[0])[0:minsamples]
  else:
   idx = np.arange(X.shape[0])
+ print np.mean(X[idx,:])
 
  #Cluster the data
- model = sklearn.cluster.KMeans(n_clusters=nc)
- model.fit(X[idx,:])
+ if nc > 1:
+  np.random.seed(1245)
+  model = sklearn.cluster.KMeans(n_clusters=nc)
+  model.fit(X[idx,:])
+  p = model.predict(X)
+ else:
+  p = np.zeros(X.shape[0])
 
- return model.predict(X)
+ return p
 
 def compute_performance_metrics(Xd,data):
 
  #Evaluate performance
- maes = []
- tmp = np.copy(data).astype(np.float32)
+ vals = []
  for var in Xd:
-  tmp[:] = -9999
+  tmp = []
   ucs = np.unique(data)
+  #tmp = np.zeros(data.size)
+  #tmp[:] = -9999
+  #Normalize data
+  obs = normalize_variable(Xd[var]['d'],Xd[var]['min'],Xd[var]['max'])
+  #ms = []
   for uc in ucs:
    m = data == uc
-   tmp[m] = np.mean(Xd[var]['d'][m])
-  maes.append(metrics.MAE(Xd[var]['d'],tmp))
+   #print var,uc,np.unique(obs[m])
+   tmp.append(np.std(obs[m]))
+   #tmp[m] = np.mean(obs[m])
+   #ms.append(metrics.RMSE(obs[m],tmp[m]))
+   #ms.append(np.abs(obs[m]-tmp[m])))
+  #print var,tmp
+  #maes.append(metrics.MAE(Xd[var]['d'],tmp))
+  #vals.append(metrics.RMSE(Xd[var]['d'],tmp))
+  #print np.unique(tmp),np.unique(Xd[var]['d'])
+  #vals.append(metrics.MAE(obs,tmp))
+  #print var,np.max(ms)
+  #vals.append(np.max(ms))
+  #print var,np.max(ms)
+  #print var,np.max(tmp)
+  vals.append(np.max(tmp))
 
- return np.array(maes)
+ return np.array(vals)
 
 def compute_cluster_parameters(Xd):
 
@@ -72,27 +99,34 @@ def compute_cluster_parameters(Xd):
 
   #0.Prepare the data
   X = []
+  print Xd.keys()
   for var in Xd:
-   tmp = normalize_variable(np.copy(Xd[var]['d']))
+   tmp = normalize_variable(np.copy(Xd[var]['d']),Xd[var]['min'],Xd[var]['max'])
    tmp = ws[Xd.keys().index(var)]*tmp#(tmp-np.min(tmp))/(np.max(tmp)-np.min(tmp))
    X.append(tmp)
   X = np.array(X).T
+  #Remove columns with all zeros
+  #m = np.sum(X,axis=0) != 0
+  #X = X[:,m]
   #1.Cluster data
-  data = cluster(X,nc)
+  data = cluster_data(X,nc)
   #2.Compute the performance metrics
   maes = compute_performance_metrics(Xd,data)
   #3.Determine the next step
-  #print ncl,nc,ncr,maes,ws,size,np.sum(maes > tols)
+  print 't',tols
+  print ncl,nc,ncr,maes,ws,size,np.sum(maes > tols)
   #if (np.sum(maes <= tols) == maes.size) & (ncr - ncl == 1):
   if (ncr - ncl == 1):
    break
-  elif (np.sum(maes > tols) < size) & (nc <= 8) & (count < 10):
+  elif (np.sum(maes > tols) < size) & (nc <= 32) & (count < 20):
    rc = 0.01*(maes - tols)/tols
    ws = ws + rc
    ws[ws < 0] = 0#10**-10
    ws = ws/np.sum(ws)
    size = np.sum(ws > 0)
    count += 1
+   print ws
+   exit()
   elif (np.sum(maes <= tols) == maes.size) & (ncr == 0):
    ncr = nc
    nc = int(np.ceil((float(ncl) + float(ncr))/2))
@@ -244,10 +278,10 @@ def reduce_basin_number(basins,bp,nbasins_goal):
  return basins
 
 def calculate_hillslope_properties(hillslopes,dem,basins,res,latitude,
-    longitude,depth2channel,slope,aspect,cplan,cprof,channels):
+    longitude,depth2channel,slope,aspect,cplan,cprof,channels,tas,prec):
 
  nh = np.max(hillslopes)+1
- (eh,ah,bh,lath,lonh,erange,hid,d2c,slope,haspect,hcplan,hcprof,hmaxd2c,hmind2c,htwidth,hbwidth) = ttf.calculate_hillslope_properties(hillslopes,dem,basins,res,nh,latitude,longitude,depth2channel,slope,aspect,cplan,cprof,channels)
+ (eh,ah,bh,lath,lonh,erange,hid,d2c,slope,haspect,hcplan,hcprof,hmaxd2c,hmind2c,htwidth,hbwidth,htas,hprec) = ttf.calculate_hillslope_properties(hillslopes,dem,basins,res,nh,latitude,longitude,depth2channel,slope,aspect,cplan,cprof,channels,tas,prec)
  properties = {'elevation':eh,
                'area':ah,
                'basin':bh,
@@ -267,6 +301,8 @@ def calculate_hillslope_properties(hillslopes,dem,basins,res,latitude,
                'maxd2c':hmaxd2c,
                'twidth':htwidth,
                'bwidth':hbwidth,
+               'tas':htas,
+               'prec':hprec,
               }
 
  #Remove nans
@@ -463,7 +499,7 @@ def create_hillslope_tiles(hillslopes,depth2channel,nbins,bins):
 
  return clusters
 
-def create_hrus(hillslopes,htiles,covariates,nclusters):
+def create_hrus(hillslopes,htiles,covariates,nclusters,flag):
 
  #Curate the covariates
  for var in covariates: 
@@ -485,8 +521,14 @@ def create_hrus(hillslopes,htiles,covariates,nclusters):
    ccp = {}
    for var in covariates:
     tmp = covariates[var]['d'][mt]
-    ccp[var] = {'d':tmp,'t':covariates[var]['t']}
-   (nc,ws) = compute_cluster_parameters(ccp)
+    ccp[var] = {'d':tmp,'t':covariates[var]['t'],
+                'min':covariates[var]['min'],
+                'max':covariates[var]['max']}
+   if flag == True:
+    (nc,ws) = compute_cluster_parameters(ccp)
+   else:
+    nc = nclusters
+    ws = np.ones(len(ccp.keys()))
    print 'hillslope: %d, tile: %d, nc: %d' % (uh,ut,nc)
    #Add weights to covariates
    for var in covariates:
@@ -495,7 +537,7 @@ def create_hrus(hillslopes,htiles,covariates,nclusters):
    X = []
    for var in covariates:
     #Normalize and apply weight
-    tmp = covariates[var]['w']*normalize_variable(covariates[var]['d'][mt])
+    tmp = covariates[var]['w']*normalize_variable(covariates[var]['d'][mt],covariates[var]['min'],covariates[var]['max'])
     #tmp[(np.isnan(tmp) == 1) | (np.isinf(tmp) == 1)] = 0.0
     #Convert to percentiles
     #argsort = np.argsort(tmp)
@@ -503,9 +545,13 @@ def create_hrus(hillslopes,htiles,covariates,nclusters):
     X.append(tmp)
    #cluster the data
    X = np.array(X).T
-   state = 35799
-   model = sklearn.cluster.KMeans(n_clusters=nc,random_state=state)
-   clusters = model.fit_predict(X)+maxc
+   clusters = cluster_data(X,nc)+maxc
+   #state = 35799
+   #if (X.shape[0] >= nc):
+   # model = sklearn.cluster.KMeans(n_clusters=nc,random_state=state)
+   # clusters = model.fit_predict(X)+maxc
+   #else:
+    #clusters = np.zeros(X.shape[0])+maxc
    hrus[mt] = clusters
    maxc = np.max(clusters)+1
 
@@ -543,7 +589,7 @@ def cluster_hillslopes(hillslopes,covariates,hp_in,nclusters,ws):
  for var in covariates:
   covariates[var]['w'] = ws[covariates.keys().index(var)]
 
- import sklearn.cluster
+ #import sklearn.cluster
  X = []
  for var in covariates:
   otmp = np.copy(covariates[var]['d'])
@@ -558,9 +604,10 @@ def cluster_hillslopes(hillslopes,covariates,hp_in,nclusters,ws):
   #tmp[otmp == 0.0] = np.mean(tmp[otmp == 0.0])
   X.append(tmp)
  X = np.array(X).T
- state = 35799#80098
- model = sklearn.cluster.KMeans(n_clusters=nclusters,random_state=state)
- clusters = model.fit_predict(X)+1
+ #state = 35799#80098
+ clusters = cluster_data(X,nclusters)+1
+ #model = sklearn.cluster.KMeans(n_clusters=nclusters,random_state=state)
+ #clusters = model.fit_predict(X)+1
  #Clean up the hillslopes
  hillslopes = np.array(hillslopes,order='f').astype(np.int32)
  ttf.cleanup_hillslopes(hillslopes)
@@ -602,6 +649,7 @@ def curate_hru_properties(hru_properties,hp):
  hru_properties['wspec'] = np.copy(hru_properties['slope'])
  hru_properties['wspec'][:] = 0.0
  for hid in hp['hid']:
+  hid = int(hid)
   m = hru_properties['hillslope_id'] == hid
   if np.sum(m) == 0:continue
   #redo the length
