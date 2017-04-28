@@ -28,14 +28,20 @@ def cluster_data(X,nc):
   #idx = np.arange(X.shape[0])[0:minsamples]
  else:
   idx = np.arange(X.shape[0])
- print np.mean(X[idx,:])
+ #print np.mean(X[idx,:])
 
  #Cluster the data
  if nc > 1:
-  np.random.seed(1245)
-  model = sklearn.cluster.KMeans(n_clusters=nc)
-  model.fit(X[idx,:])
-  p = model.predict(X)
+  nfeatures = X.shape[1]
+  #model = sklearn.cluster.MiniBatchKMeans(n_clusters=nc,random_state=35799)
+  model = sklearn.cluster.KMeans(n_clusters=nc,random_state=35799)
+  #model = KMeans(nc)
+  #model.compute(X)
+  #print model.assignments_
+  #exit()
+  #model.fit(X[idx,:])
+  p = model.fit_predict(X)
+  #p = model.predict(X)
  else:
   p = np.zeros(X.shape[0])
 
@@ -56,7 +62,11 @@ def compute_performance_metrics(Xd,data):
   for uc in ucs:
    m = data == uc
    #print var,uc,np.unique(obs[m])
-   tmp.append(np.std(obs[m]))
+   p32 = np.percentile(obs[m],32)
+   p68 = np.percentile(obs[m],68)
+   #print var,p10,p90,p90-p1
+   tmp.append(p68-p32)
+   #tmp.append(2*np.std(obs[m]))
    #tmp[m] = np.mean(obs[m])
    #ms.append(metrics.RMSE(obs[m],tmp[m]))
    #ms.append(np.abs(obs[m]-tmp[m])))
@@ -69,11 +79,11 @@ def compute_performance_metrics(Xd,data):
   #vals.append(np.max(ms))
   #print var,np.max(ms)
   #print var,np.max(tmp)
-  vals.append(np.max(tmp))
+  vals.append(np.mean(tmp))#percentile(tmp,90))
 
  return np.array(vals)
 
-def compute_cluster_parameters(Xd):
+def compute_cluster_parameters(Xd,maxnc=1000):
 
  #Assemble tolerances
  tols = []
@@ -99,7 +109,7 @@ def compute_cluster_parameters(Xd):
 
   #0.Prepare the data
   X = []
-  print Xd.keys()
+  #print Xd.keys()
   for var in Xd:
    tmp = normalize_variable(np.copy(Xd[var]['d']),Xd[var]['min'],Xd[var]['max'])
    tmp = ws[Xd.keys().index(var)]*tmp#(tmp-np.min(tmp))/(np.max(tmp)-np.min(tmp))
@@ -113,20 +123,21 @@ def compute_cluster_parameters(Xd):
   #2.Compute the performance metrics
   maes = compute_performance_metrics(Xd,data)
   #3.Determine the next step
-  print 't',tols
-  print ncl,nc,ncr,maes,ws,size,np.sum(maes > tols)
+  #print 't',tols
+  #print ncl,nc,ncr,maes,ws,size,np.sum(maes > tols)
   #if (np.sum(maes <= tols) == maes.size) & (ncr - ncl == 1):
-  if (ncr - ncl == 1):
+  if nc >= maxnc:
+   nc = maxnc
    break
-  elif (np.sum(maes > tols) < size) & (nc <= 32) & (count < 20):
+  elif (ncr - ncl == 1):
+   break
+  elif (np.sum(maes > tols) < size) & (nc <= 8) & (count < 20):
    rc = 0.01*(maes - tols)/tols
    ws = ws + rc
    ws[ws < 0] = 0#10**-10
    ws = ws/np.sum(ws)
    size = np.sum(ws > 0)
    count += 1
-   print ws
-   exit()
   elif (np.sum(maes <= tols) == maes.size) & (ncr == 0):
    ncr = nc
    nc = int(np.ceil((float(ncl) + float(ncr))/2))
@@ -499,7 +510,7 @@ def create_hillslope_tiles(hillslopes,depth2channel,nbins,bins):
 
  return clusters
 
-def create_hrus(hillslopes,htiles,covariates,nclusters,flag):
+def create_hrus(hillslopes,htiles,covariates,nclusters,flag,maxnc):
 
  #Curate the covariates
  for var in covariates: 
@@ -525,7 +536,7 @@ def create_hrus(hillslopes,htiles,covariates,nclusters,flag):
                 'min':covariates[var]['min'],
                 'max':covariates[var]['max']}
    if flag == True:
-    (nc,ws) = compute_cluster_parameters(ccp)
+    (nc,ws) = compute_cluster_parameters(ccp,maxnc)
    else:
     nc = nclusters
     ws = np.ones(len(ccp.keys()))
