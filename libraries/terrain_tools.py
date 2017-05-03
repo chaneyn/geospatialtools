@@ -3,6 +3,8 @@ import numpy as np
 import terrain_tools_fortran as ttf
 import metrics 
 import sklearn.cluster
+import sklearn.linear_model
+import scipy.stats
 import copy
 
 def normalize_variable(input,min,max):
@@ -52,34 +54,34 @@ def compute_performance_metrics(Xd,data):
  #Evaluate performance
  vals = []
  for var in Xd:
-  tmp = []
+  #tmp = []
   ucs = np.unique(data)
-  #tmp = np.zeros(data.size)
-  #tmp[:] = -9999
+  tmp = np.zeros(data.size)
+  tmp[:] = -9999
   #Normalize data
   obs = normalize_variable(Xd[var]['d'],Xd[var]['min'],Xd[var]['max'])
   #ms = []
   for uc in ucs:
    m = data == uc
    #print var,uc,np.unique(obs[m])
-   p32 = np.percentile(obs[m],32)
-   p68 = np.percentile(obs[m],68)
+   #p32 = np.percentile(obs[m],32)
+   #p68 = np.percentile(obs[m],68)
    #print var,p10,p90,p90-p1
-   tmp.append(p68-p32)
+   #tmp.append(p68-p32)
    #tmp.append(2*np.std(obs[m]))
-   #tmp[m] = np.mean(obs[m])
+   tmp[m] = np.mean(obs[m])
    #ms.append(metrics.RMSE(obs[m],tmp[m]))
    #ms.append(np.abs(obs[m]-tmp[m])))
   #print var,tmp
   #maes.append(metrics.MAE(Xd[var]['d'],tmp))
-  #vals.append(metrics.RMSE(Xd[var]['d'],tmp))
+  RMSE = metrics.RMSE(obs,tmp)
+  vals.append(RMSE)
   #print np.unique(tmp),np.unique(Xd[var]['d'])
   #vals.append(metrics.MAE(obs,tmp))
-  #print var,np.max(ms)
   #vals.append(np.max(ms))
   #print var,np.max(ms)
   #print var,np.max(tmp)
-  vals.append(np.mean(tmp))#percentile(tmp,90))
+  #vals.append(np.mean(tmp))#percentile(tmp,90))
 
  return np.array(vals)
 
@@ -131,7 +133,7 @@ def compute_cluster_parameters(Xd,maxnc=1000):
    break
   elif (ncr - ncl == 1):
    break
-  elif (np.sum(maes > tols) < size) & (nc <= 8) & (count < 20):
+  elif (np.sum(maes > tols) < size) & (nc <= 100) & (count < 20):
    rc = 0.01*(maes - tols)/tols
    ws = ws + rc
    ws[ws < 0] = 0#10**-10
@@ -287,6 +289,167 @@ def reduce_basin_number(basins,bp,nbasins_goal):
  basins[basins <= 0] = -9999
 
  return basins
+
+def calculate_hillslope_properties_updated(hillslopes,dem,basins,res,latitude,
+    longitude,depth2channel,slope,aspect,cplan,cprof,channels,tas,prec):
+
+ #import matplotlib.pyplot as plt
+ nh = np.max(hillslopes)+1
+
+ #Iterate through each hillslope to calculate properties
+ uhs = np.unique(hillslopes)
+ uhs = uhs[uhs != -9999]
+ for uh in uhs[1000:]:
+  idx = np.where(hillslopes == uh)
+  imin = np.min(idx[0])
+  imax = np.max(idx[0])
+  jmin = np.min(idx[1])
+  jmax = np.max(idx[1])
+  #Extract covariates for region 
+  shs = hillslopes[imin:imax+1,jmin:jmax+1]
+  sd2c = depth2channel[imin:imax+1,jmin:jmax+1]
+  sslope = slope[imin:imax+1,jmin:jmax+1]
+  #Bin the d2c
+  m = shs == uh
+  shs[~m] = 0
+  shs[m] = 1
+  sd2c[~m] = -9999
+  nc = min(10,np.sum(m)/3) 
+  print 'nc',nc
+  if nc > 1:
+   model = sklearn.cluster.KMeans(n_clusters=nc,random_state=35799)
+   X = sd2c[m]
+   X = X[:,np.newaxis]
+   tmp = model.fit_predict(X)+1
+  else:
+   tmp = np.array([1,])
+  cls = np.copy(shs)
+  cls[m] = tmp[:]
+
+  #Reassign the d2c and create a new hillslope
+  data = {'slope':[],'d2c':[],'area':[]}
+  hillslope = np.zeros(sd2c.shape).astype(np.int32)
+  for cl in np.unique(tmp):
+   m1 = cls == cl
+   if np.sum(m1) == 0:continue
+   #Calculate properties
+   data['slope'].append(np.mean(sslope[m1]))
+   data['d2c'].append(np.mean(sd2c[m1]))
+   #Compute the min/max d2c per cell
+   #min_d2c = sd2c[m1] - sslope[m1]*res/2
+   #max_d2c = sd2c[m1] + sslope[m1]*res/2
+   #data['min_d2c'].append(np.min(min_d2c))#np.percentile(min_d2c,5))
+   #data['max_d2c'].append(np.max(max_d2c))#np.percentile(max_d2c,95))
+   data['area'].append(res**2*np.sum(m1))
+   #Add id
+   hillslope[m1] = cl
+
+  #Sort data
+  argsort = np.argsort(data['d2c'])
+  for var in data:
+   data[var] = np.array(data[var])[argsort]
+
+  #data['length'] = (data['max_d2c']-data['min_d2c'])/data['slope']
+  #data['position'] = np.cumsum(data['length'])-data['length']/2
+  d2c0 = 0
+  pos0 = 0
+  position = []
+  length = []
+  for i in xrange(data['d2c'].size):
+   s = data['slope'][i]
+   d2c = data['d2c'][i]
+   pos = (d2c-d2c0)/s + pos0
+   l = (pos-pos0)*2
+   pos0 = pos + l
+   d2c0 = d2c + s*l/2
+   position.append(pos)
+   length.append(l)
+  data['position'] = np.array(position)
+  data['length'] = np.array(length)
+
+  #Calculate width,length,and position
+  data['width'] = data['area']/data['length']
+  
+  #Fit line to width and slope
+  position = np.array([0.,]+list(data['position'])+[np.sum(data['length']),])
+  width = np.array([data['width'][0],]+list(data['width'])+[data['width'][-1],])
+  d2c = np.array([0.0,]+list(data['d2c'])+[data['d2c'][-1]+data['slope'][-1]*data['length'][-1]/2,])
+  z = np.polyfit(position,width,1)
+  fw = np.poly1d(z)
+  #data['width'] = width/wm.intercept_
+  #wm = sklearn.linear_model.LinearRegression()
+  #wm.fit(position[:,np.newaxis],width)
+  #Normalize the width function parameters
+  #wm.coef_ = wm.coef_/wm.intercept_
+  #wm.intercept_ = 1.0
+  # calculate polynomial
+  z = np.polyfit(data['position'],data['d2c'],2)
+  fz = np.poly1d(z)
+  fs = np.polyder(fz)
+  #sm = sklearn.linear_model.LinearRegression()
+  #sm.fit(data['position'][:,np.newaxis],data['slope'])
+  print uh
+  print 'width',fw.coeffs[0]
+  print 'slope',fs.coeffs[0]
+
+  '''#Plot data
+  plt.subplot(221)
+  plt.plot(data['position'],data['d2c'])
+  #plt.plot(data['position'],sm.intercept_*data['position'] + sm.coef_*data['position']**2/2)
+  plt.plot(position,fz(position))
+  plt.subplot(222)
+  plt.plot(data['position'],data['slope'])
+  #plt.plot(data['position'],sm.intercept_ + sm.coef_*data['position'])
+  plt.plot(position,fs(position))
+  plt.subplot(223)
+  plt.plot(data['position'],data['width'])
+  plt.plot(position,fw(position))
+  plt.subplot(224)
+  plt.imshow(hillslope,interpolation='nearest')
+  plt.show()'''
+  #(w,l) = ttf.calculate_hillslope_level_properties(tmp,res,nl)
+  
+  #Assemble slope,d2c,length,position,and width
+  #Compute parameters
+  #Fit line to slope
+  #Fit line to width
+  #Sum of lengths
+  #Average slope
+  #Iterate through each level
+  #hillslope = np.ma.masked_array(hillslope,hillslope==0)
+  #plt.imshow(hillslope,interpolation='nearest')
+  #plt.show()
+  #exit()
+  #Calculate area
+ '''
+ #Remove nans
+ m = np.isnan(eh) == 0
+ for p in properties:
+  properties[p] = properties[p][m]
+
+ #Ensure the sloep values are not too large
+ m = properties['slope'] > 0.4
+ properties['slope'][m] = 0.4
+
+ #Compute the hillslope lengths (the 30 accounts for the beginning and end)
+ a = properties['maxd2c'] - properties['mind2c']
+ b = a/properties['slope'] + res
+ properties['length'] = b
+ #properties['length'] = (a**2 + b**2)**0.5
+
+ #Compute the ratio of width top to bottom
+ properties['twidth'][properties['twidth'] == 0] = 1
+ properties['bwidth'][properties['bwidth'] == 0] = 1
+ properties['twidth'] = res*properties['twidth']
+ properties['bwidth'] = res*properties['bwidth']
+ r = properties['twidth']/properties['bwidth']
+ #Restrict to 10/1
+ m = r > 3
+ r[m] = 3
+ properties['twidth'][m] = 3*properties['bwidth'][m]
+ properties['rwidth'] = r'''
+
+ return properties
 
 def calculate_hillslope_properties(hillslopes,dem,basins,res,latitude,
     longitude,depth2channel,slope,aspect,cplan,cprof,channels,tas,prec):

@@ -267,7 +267,7 @@ subroutine calculate_d8_acc_neighbors(dem,res,variable,area,nx,ny)
 
 end subroutine
 
-subroutine calculate_mfd_acc(dem,res,area,nx,ny,p)
+subroutine calculate_mfd_acc(dem,res,p,area,nx,ny)
 
  implicit none
  integer,intent(in) :: nx,ny
@@ -331,11 +331,11 @@ recursive subroutine neighbr_check_mfd(i,j,dem,catchment,positions,nx,ny,npos,p,
     
 end subroutine
 
-subroutine fract_flow_mfd(iorg,jorg,i,j,dem,fract,positions,nx,ny,npos,res)
+subroutine fract_flow_mfd(iorg,jorg,i,j,dem,fract,p,positions,nx,ny,npos,res)
 
  implicit none
  integer,intent(in) :: iorg,jorg,i,j,nx,ny,npos
- real,intent(in) :: res
+ real,intent(in) :: res,p
  real,intent(out) :: fract
  real,intent(in),dimension(nx,ny) :: dem
  integer,intent(in),dimension(npos,2) :: positions
@@ -360,7 +360,7 @@ subroutine fract_flow_mfd(iorg,jorg,i,j,dem,fract,positions,nx,ny,npos,res)
   endif
  enddo
  !Calculate sum of angles
- angle_sum = sum(slopes)
+ angle_sum = sum(slopes**p)
  !Calculate fraction
  k = iorg - i
  l = jorg - j
@@ -373,9 +373,128 @@ subroutine fract_flow_mfd(iorg,jorg,i,j,dem,fract,positions,nx,ny,npos,res)
   fract = 0.0
  else
   slope = (dem(i,j) - dem(iorg,jorg))/length
-  fract = slope/angle_sum
+  fract = slope**p/angle_sum
  endif
 
+end subroutine
+
+subroutine calculate_depth2channel_mfd(channels,mask,p,dem,res,depth2channel,nx,ny)
+
+ implicit none
+ integer,intent(in) :: nx,ny,p
+ integer,intent(in) :: channels(nx,ny),mask(nx,ny)
+ real,intent(in) :: dem(nx,ny),res
+ real,intent(out) :: depth2channel(nx,ny)
+ real :: channeldepth(nx,ny),cd
+ integer :: i,j,positions(8,2),k,pos,l
+ real :: undef = -9999.0
+
+ !Construct positions array
+ pos = 0
+ do k=-1,1
+  do l=-1,1
+   if ((k == 0) .and. (l == 0)) cycle
+   pos = pos + 1
+   positions(pos,1) = k
+   positions(pos,2) = l
+  enddo
+ enddo
+
+ !Initialize the channel depth array to -9999.0
+ channeldepth = dem
+ depth2channel = undef
+
+ !If the channeldepth is below 0 then set to 0
+ where(channeldepth .lt. 0)
+  channeldepth = 0.0
+ endwhere
+
+ !Mask out all the elevation elements that are not channels
+ where ((mask .le. 0) .or. (channels .le. 0))
+  channeldepth = undef
+ endwhere
+
+ !Iterate cell by cell
+ do i=1,nx
+  do j=1,ny
+   !Only work on this cell if the basin id is unknown and the mask is positive
+   if ((channeldepth(i,j) .eq. undef) .and. (mask(i,j) .ge. 1)) then
+    call determine_channel_depth_mfd(i,j,channeldepth,cd,mask,nx,ny,p,positions,dem,res)
+   endif
+  enddo
+ enddo
+
+ !Calculate the depth2channel by subtracting the channel depth
+ depth2channel = dem - channeldepth
+
+ !Set any channel depths below 0 to 0 (This is a hack)
+ where (depth2channel .lt. 0) 
+  depth2channel = undef
+ endwhere
+
+ !Set all values that are outside of the mask to undef
+ where (mask .le. 0)
+  depth2channel = undef
+ endwhere
+
+end subroutine
+
+recursive subroutine determine_channel_depth_mfd(i,j,channeldepth,cd,mask,nx,ny,p,positions,dem,res)
+
+ implicit none
+ integer,intent(in) :: i,j,nx,ny,p
+ integer,intent(inout) :: mask(nx,ny)
+ real,intent(inout) :: cd,channeldepth(nx,ny)
+ real,intent(in) :: res
+ real,intent(in),dimension(nx,ny) :: dem
+ integer,intent(in) :: positions(8,2)
+ integer :: ipos,inew,jnew,k,l,npos
+ real :: angle_sum,slope,length,slopes(8),fract
+ if (mask(i,j) .eq. 0)return
+ npos = 8
+ slopes = 0.0
+ !Calculate all the slopes for the surrounding cells
+ do ipos=1,npos
+  inew = i+positions(ipos,1)
+  jnew = j+positions(ipos,2)
+  if ((inew .lt. 1) .or. (jnew .lt. 1) .or. (inew .gt. nx) .or. (jnew .gt. ny))cycle
+  if (mask(inew,jnew) .eq. 0)cycle
+  if (dem(i,j) .gt. dem(inew,jnew))then
+   k = inew - i
+   l = jnew - j
+   if ((k + l .eq. -2) .or. (k + l .eq. 2) .or. (k + l .eq. 0))then
+    length = 1.41421356237*res
+   else
+    length = res
+   endif
+   slopes(ipos) = (dem(i,j) - dem(inew,jnew))/length
+  endif
+ enddo
+ !Calculate sum of angles
+ angle_sum = sum(slopes**p)
+ !Iterate through all the positions
+ do ipos=1,npos
+  inew = i+positions(ipos,1)
+  jnew = j+positions(ipos,2)
+  slope = slopes(ipos)
+  if ((inew .lt. 1) .or. (jnew .lt. 1) .or. (inew .gt. nx) .or. (jnew .gt. ny))cycle
+  if (slope .eq. 0.0)cycle
+  if (mask(inew,jnew) .eq. 0)cycle
+  fract = slope**p/angle_sum
+  !Figure out if downhill has a value if not then recurse. If it does then
+  if (channeldepth(inew,jnew) .ge. 0)then
+   cd = channeldepth(inew,jnew)
+   if (channeldepth(i,j) .eq. -9999)channeldepth(i,j) = 0.0
+   channeldepth(i,j) = channeldepth(i,j) + fract*cd
+  else
+   call determine_channel_depth_mfd(inew,jnew,channeldepth,cd,mask,nx,ny,p,positions,dem,res)
+   if (channeldepth(i,j) .eq. -9999)channeldepth(i,j) = 0.0
+   channeldepth(i,j) = channeldepth(i,j) + fract*cd
+  endif
+ enddo
+ !Return the cd
+ cd = channeldepth(i,j)
+  
 end subroutine
 
 subroutine calculate_channels(area_in,threshold,basin_threshold,fdir,channels,nx,ny)
@@ -1196,6 +1315,62 @@ subroutine calculate_hillslope_properties(hillslopes,dem,basins,res,nh,&
  do ih=1,nh
   hillslopes_id(ih) = ih
  enddo
+ 
+end subroutine
+
+subroutine calculate_hillslope_level_properties(hillslopes,res,nl,width,length,nx,ny)
+
+ implicit none
+ real,intent(in) :: res
+ integer,intent(in) :: nx,ny,nl
+ integer,intent(in) :: hillslopes(nx,ny)
+ real,intent(out) :: width(nl),length(nl)
+ real :: a(nl)
+ integer :: i,j,l,l1,positions(4,2),minl,maxl,ipos
+ positions(1,:) = (/-1,0/)
+ positions(2,:) = (/0,-1/)
+ positions(3,:) = (/0,1/)
+ positions(4,:) = (/1,0/)
+
+ a = 0
+ minl = 9999
+ maxl = -9999
+ do i=1,nx
+  do j=1,ny
+   l = hillslopes(i,j)
+   if (l .eq. 0)cycle
+   if (l < minl)minl = l
+   if (l > maxl)maxl = l
+   !Add to area
+   a(l) = a(l) + 1
+   !Add to width
+   do ipos=1,4
+    l1 = hillslopes(i+positions(ipos,1),j+positions(ipos,2))
+    if (l1 .eq. 0)cycle
+    if (l1 .ne. l)width(l) = width(l) + 1
+   enddo
+  enddo
+ enddo
+
+ !Finalize widths
+ width = res*width
+ width(minl+1:maxl-1) = width(minl+1:maxl-1)/2
+
+ !Finalize area
+ a = res**2*a
+
+ !Calculate length
+ length = a/width
+
+ !Deal with 1 bin case
+ print*,size(a)
+ if (size(a) .eq. 1)then
+  length = 30.0
+  width = a/length
+ endif
+ print*,a
+ print*,width
+ print*,sum(length)
  
 end subroutine
 
