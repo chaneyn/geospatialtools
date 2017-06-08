@@ -4,22 +4,18 @@ import os
 os.system('rm -rf *.dSYM')
 #subroutines
 subroutines = 'calculate_d8_acc \
-              calculate_d8_acc_alt \
 	      calculate_d8_acc_neighbors \
               calculate_mfd_acc \
+              neighbr_check_d8 \
               cleanup_hillslopes \
               calculate_channels \
               calculate_channels_wocean \
               delineate_basins \
               delineate_hillslopes \
-              calculate_hillslope_properties \
-              calculate_hillslope_level_properties \
               assign_properties_to_hillslopes \
               calculate_basin_properties \
               calculate_depth2channel \
               calculate_depth2channel_mfd \
-              calculate_depth2ridge \
-              calculate_hillslopesd8 \
               assign_clusters_to_hillslopes \
               calculate_hru_properties \
               retrieve_basin_properties \
