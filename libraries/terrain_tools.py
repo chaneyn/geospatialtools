@@ -744,11 +744,11 @@ def create_hillslope_tiles_updated(hillslopes,depth2channel,hillslopes_full,hp_i
   nbins = hp['nbins'][ih-1]
   for ibin in xrange(nbins):
    if ibin == 0:
-    smask = mask & (nrelief < nr[0::2][ibin+1])
+    smask = mask & (nrelief <= nr[0::2][ibin+1])
    elif ibin == nbins-1:
     smask = mask & (nrelief > nr[0::2][ibin])
    else:
-    smask = mask & (nrelief >= nr[0::2][ibin]) & (nrelief <= nr[0::2][ibin+1])
+    smask = mask & (nrelief > nr[0::2][ibin]) & (nrelief <= nr[0::2][ibin+1])
    clusters[smask] = ibin+1
 
  #Cleanup the tiles
@@ -1048,7 +1048,7 @@ def cluster_hillslopes_updated(hillslopes,covariates,hp_in,nclusters,ws,md):
   hp_out['relief_p0'].append(fr[0])
   hp_out['relief_p1'].append(fr[1])
   #Fit line to width
-  fw, pcov = scipy.optimize.curve_fit(fwidth,w,d,bounds=([-0.99,],[99,]))
+  fw, pcov = scipy.optimize.curve_fit(fwidth,p,w,bounds=([-0.99,],[99,]))
   hp_out['width_p0'].append(fw[0])
   #plt.plot(p,d,'bo',alpha=0.05)
   #plt.plot(p,frelief(p,fr[0],fr[1]),'ro',alpha=0.05)
