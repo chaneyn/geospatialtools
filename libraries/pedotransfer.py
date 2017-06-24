@@ -112,3 +112,32 @@ def FAO_Soil_Texture(S,C,ST):
  tclass = np.ma.masked_array(tclass,tclass==-9999)
 
  return tclass
+
+def Run_Tests():
+
+ clay = np.array([88.0,80.0,65.0,40.0,20.0,10.0,60.0,30.0,10.0,10.0,50.0,25.0])/100
+ sand = np.array([5.0,5.0,10.0,20.0,15.0,5.0,25.0,35.0,35.0,45.0,40.0,50.0])/100
+ om = 2.5
+ ksat = np.array([108.,96.7,50.3,15.5,16.1,22.,11.3,4.3,5.7,3.7,1.4,1.1])
+ thetas = np.array([46.,46.,45.,46.,48.,48.,43.,48.,51.,52.,44.,50.])/100
+ theta33 = np.array([10.,12.,18.,28.,31.,30.,27.,36.,38.,41.,36.,42.])/100
+ theta1500 = np.array([5.,5.,8.,14.,11.,6.,17.,22.,22.,27.,25.,30.])/100
+
+ print "Comparing ksat"
+ print ksat
+ print Ksat_Saxton2006(clay,sand,om)
+ print np.allclose(ksat,Ksat_Saxton2006(clay,sand,om),atol=5e-01)
+ print "Comparing thetas"
+ print np.allclose(thetas,ThetaS_Saxton2006(clay,sand,om),atol=1e-02)
+ print thetas
+ print ThetaS_Saxton2006(clay,sand,om)
+ print "Comparing theta33"
+ print np.allclose(theta33,Theta_33_Saxton2006(clay,sand,om),atol=1e-02)
+ print theta33
+ print Theta_33_Saxton2006(clay,sand,om)
+ print "Comparing theta1500"
+ print np.allclose(theta1500,Theta_1500_Saxton2006(clay,sand,om),atol=1e-02)
+ print theta1500
+ print Theta_1500_Saxton2006(clay,sand,om)
+
+ return

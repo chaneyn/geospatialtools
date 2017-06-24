@@ -5,11 +5,12 @@ import scipy.stats
 def KGE2012_ALL(obs,model):
   #Use only non-nan values
   idx = np.where((np.isnan(obs) == 0) & (np.isnan(model) == 0))
-  rho = scipy.stats.pearsonr(model[idx],obs[idx])
+  rho = scipy.stats.pearsonr(model[idx],obs[idx])[0]
+  if np.isnan(rho) == 1:rho = 0.0
   mean_ratio = np.mean(model[idx])/np.mean(obs[idx])
   cv_ratio = np.std(model[idx])/np.std(obs[idx])/mean_ratio
-  kge = 1 - ((rho[0] - 1)**2 + (mean_ratio - 1)**2 + (cv_ratio - 1)**2)**0.5
-  values = {'kge':kge,'rho':rho[0],'beta':mean_ratio,'alpha':cv_ratio}
+  kge = 1 - ((rho - 1)**2 + (mean_ratio - 1)**2 + (cv_ratio - 1)**2)**0.5
+  values = {'kge':kge,'rho':rho,'beta':mean_ratio,'alpha':cv_ratio}
   return values
 
 def KGE2012(obs,model):
