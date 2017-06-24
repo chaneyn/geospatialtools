@@ -1050,9 +1050,12 @@ def cluster_hillslopes_updated(hillslopes,covariates,hp_in,nclusters,ws,md):
   hp_out['frac'].append(np.sum(hp_in['area'][m])/np.sum(hp_in['area']))
 
  #Compute the average width and d2c function
- vars = ['relief_p0','relief_p1','width_p0']
+ vars = ['relief_p0','relief_p1','width_p0','w','p','d']
  for var in vars:
-  hp_out[var] = []
+  if var in ['w','p','d']:
+   hp_out[var] = {}
+  else:
+   hp_out[var] = []
  for cluster in uclusters:
   ids = np.where(clusters == cluster)[0]
   d = []
@@ -1065,6 +1068,9 @@ def cluster_hillslopes_updated(hillslopes,covariates,hp_in,nclusters,ws,md):
    p = p + list(hp_in['position_array'][id])
   d = np.array(d)
   w = np.array(w)
+  hp_out['p'][cluster] = p
+  hp_out['d'][cluster] = d
+  hp_out['w'][cluster] = w
   #Fit curve to d2c
   fr, pcov = scipy.optimize.curve_fit(frelief,p,d)#,bounds=([0.0,-1000],[10**4,1000]))
   hp_out['relief_p0'].append(fr[0])
@@ -1078,6 +1084,7 @@ def cluster_hillslopes_updated(hillslopes,covariates,hp_in,nclusters,ws,md):
   
  #Convert to arrays
  for var in hp_out:
+  if var in ['p','d','w']:continue
   hp_out[var] = np.array(hp_out[var])
 
  #Define the number of elevation tiles per cluster
