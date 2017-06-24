@@ -7,7 +7,7 @@ import sklearn.linear_model
 import scipy.stats
 import copy
 import time
-import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt
 
 def frelief_inv(y,a,b):
  return (1 - (1 - y)**(1/b))**(1/a)
@@ -239,10 +239,10 @@ def define_hrus(basins,dem,channels):
   for ibin in xrange(nbins):
    smask = (basins == basin) & (dem >= bins[ibin]) & (dem < bins[ibin+1])
    tmp[smask] = np.mean(dem[smask])
- import matplotlib.pyplot as plt
- tmp = np.ma.masked_array(tmp,tmp==0)
- plt.imshow(tmp)
- plt.show()
+ #import matplotlib.pyplot as plt
+ #tmp = np.ma.masked_array(tmp,tmp==0)
+ #plt.imshow(tmp)
+ #plt.show()
 
  return 
 
@@ -388,6 +388,8 @@ def calculate_hillslope_properties_updated(hillslopes,dem,res,latitude,
   length = []
   position = []
   pos0 = 0
+  #Ensure there are no zero slopes
+  s[s == 0] = 10**-4
   for i in xrange(data['d2c'].size):
    if (data['d2c'].size == 1):
     ld = (d2c[i])/(s[i]/2)
@@ -401,6 +403,12 @@ def calculate_hillslope_properties_updated(hillslopes,dem,res,latitude,
    else:
     ld = ((d2c[i] - d2c[i-1])/((s[i-1]+s[i])/2))/2
     lu = ((d2c[i+1] - d2c[i])/((s[i]+s[i+1])/2))/2
+   #Ensure ld/lu are not 0 (HACK)
+   if ld == 0:
+    ld = 1.0 #meter
+   if lu == 0:
+    lu = 1.0 #meter
+
    pos = pos0 + ld
    position.append(pos)
    pos0 = pos + lu
@@ -408,7 +416,7 @@ def calculate_hillslope_properties_updated(hillslopes,dem,res,latitude,
   data['position'] = np.array(position)
   data['length'] = np.array(length)
   
-  #Calculate width,length,and position
+  #Calculate width 
   data['width'] = data['area']/data['length']
   
   #Fit line to width and depth2channel (slope is derivative of the second)
@@ -788,7 +796,7 @@ def create_hrus(hillslopes,htiles,covariates,nclusters,flag,maxnc):
    else:
     nc = nclusters
     ws = np.ones(len(ccp.keys()))
-   print 'hillslope: %d, tile: %d, nc: %d' % (uh,ut,nc)
+   #print 'hillslope: %d, tile: %d, nc: %d' % (uh,ut,nc)
    #Add weights to covariates
    for var in covariates:
     covariates[var]['w'] = ws[ccp.keys().index(var)]
@@ -843,6 +851,15 @@ def calculate_hru_properties(hillslopes,tiles,channels,res,nhillslopes,hrus,dept
 
 def calculate_hru_properties_updated(hillslopes,tiles,res,hrus,depth2channel,slope,hp):
 
+ #Get the hillslope fractions
+ fs = []
+ for ih in xrange(hp['hid'].size):
+  hid = int(hp['hid'][ih])
+  f = np.sum(hillslopes == hid)/float(hillslopes.size)
+  fs.append(f)
+ fs = np.array(fs)
+ hp['frac'] = fs/np.sum(fs) #fix to 1
+
  #Assemble masks
  masks = {}
  for i in xrange(hillslopes.shape[0]):
@@ -868,7 +885,8 @@ def calculate_hru_properties_updated(hillslopes,tiles,res,hrus,depth2channel,slo
   hru_properties['hillslope_slope'].append(np.float64(np.mean(slope[iss,jss])))
  for var in hru_properties:
   hru_properties[var] = np.array(hru_properties[var])
- hru_properties['frac'] = hru_properties['area']/np.sum(hru_properties['area'])
+ hru_properties['frac'] = np.zeros(hru_properties['area'].size)
+ #hru_properties['frac'] = np.zeros(hru_properties['area']/np.sum(hru_properties['area'])
 
  #Add fill for the other properties
  vars = ['hillslope_length','hillslope_hand','hillslope_position','hillslope_width','hillslope_frac']
@@ -878,7 +896,7 @@ def calculate_hru_properties_updated(hillslopes,tiles,res,hrus,depth2channel,slo
  #Associate the hillslope properties
  for ih in xrange(hp['hid'].size):
   hid = int(hp['hid'][ih])
-  print hid
+  #print hid
   m = hru_properties['hillslope_id'] == hid
   #Extract the tids
   (tids,idx) = np.unique(hru_properties['tile_id'][m],return_inverse=True)
@@ -901,6 +919,14 @@ def calculate_hru_properties_updated(hillslopes,tiles,res,hrus,depth2channel,slo
   #Convert all to float64
   length = length.astype(np.float64)
   width = width.astype(np.float64)
+  #Correct to the actual area (This is necessary for conservation in div_it...)
+  #print idx
+  #print length
+  #print width
+  #tmp = hru_properties['area'][m][idx]
+  #tmp = np.sum(length*width)*tmp/np.sum(tmp)
+  #r = tmp/(length*width)
+  #length = r*length
   hand = hand.astype(np.float64)
   #Compute the fractions
   frac = (width*length)/np.sum(width*length)
@@ -916,6 +942,8 @@ def calculate_hru_properties_updated(hillslopes,tiles,res,hrus,depth2channel,slo
    m1 = m & (hru_properties['tile_id'] == tids[it])
    f = hru_properties['area'][m1]/np.sum(hru_properties['area'][m1])
    hru_properties['hillslope_frac'][m1] = frac[it]*f
+  #Set the overall fraction
+  hru_properties['frac'][m] = hp['frac'][ih]*hru_properties['hillslope_frac'][m]
 
  return hru_properties
                        

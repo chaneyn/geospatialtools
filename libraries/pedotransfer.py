@@ -71,6 +71,17 @@ def Ksat_Saxton2006(S,C,OM):
  Lambda = Lambda_Saxton_2006(S,C,OM)
  return 1930*(ThetaS - Theta33)**(3-Lambda)
 
+def Psisat_Saxton2006(S,C,OM):
+
+  vwcr = 0
+  b = 1/Lambda_Saxton_2006(S,C,OM)
+  vwc33 = Theta_33_Saxton2006(S,C,OM)
+  vwc0 = ThetaS_Saxton2006(S,C,OM)
+  vwc = vwc33
+  psi = 33
+
+  return psi*((vwc-vwcr)/(vwc0-vwcr))**b
+
 def FAO_Soil_Texture(S,C,ST):
 
  ##Coarse  Medium   Fine    CM     CF     MF    CMF
