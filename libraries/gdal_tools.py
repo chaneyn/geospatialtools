@@ -1,4 +1,4 @@
-import gdal
+import osgeo.gdal as gdal
 import osgeo
 import os
 from osgeo import osr
