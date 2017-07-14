@@ -139,5 +139,7 @@ def Run_Tests():
  print np.allclose(theta1500,Theta_1500_Saxton2006(clay,sand,om),atol=1e-02)
  print theta1500
  print Theta_1500_Saxton2006(clay,sand,om)
+ print "Psisat"
+ print 10*Psisat_Saxton2006(clay,sand,om)/100 #m
 
  return
