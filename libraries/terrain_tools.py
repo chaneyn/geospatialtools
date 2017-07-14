@@ -1068,9 +1068,9 @@ def cluster_hillslopes_updated(hillslopes,covariates,hp_in,nclusters,ws,md):
    p = p + list(hp_in['position_array'][id])
   d = np.array(d)
   w = np.array(w)
-  hp_out['p'][cluster] = p
-  hp_out['d'][cluster] = d
-  hp_out['w'][cluster] = w
+  hp_out['p'][cluster-1] = p
+  hp_out['d'][cluster-1] = d
+  hp_out['w'][cluster-1] = w
   #Fit curve to d2c
   fr, pcov = scipy.optimize.curve_fit(frelief,p,d)#,bounds=([0.0,-1000],[10**4,1000]))
   hp_out['relief_p0'].append(fr[0])
