@@ -704,9 +704,10 @@ subroutine delineate_basins(channels,basins,mask,fdir,nx,ny)
  implicit none
  integer,intent(in) :: nx,ny
  integer,intent(in) :: channels(nx,ny),fdir(nx,ny,2)
- integer,intent(inout) :: mask(nx,ny)
+ integer,intent(in) :: mask(nx,ny)
  integer,intent(out) :: basins(nx,ny)
- integer :: i,j,basin_id
+ integer :: i,j,basin_id,cmask(nx,ny)
+ cmask = mask
 
  !Initialize the basin delineation to the channel network (everythin else 0)
  basins = channels
@@ -715,9 +716,9 @@ subroutine delineate_basins(channels,basins,mask,fdir,nx,ny)
  do i=1,nx
   do j=1,ny
    !Only work on this cell if the basin id is unknown and the mask is positive
-   if ((basins(i,j) .eq. 0) .and. (mask(i,j) .ge. 1)) then
+   if ((basins(i,j) .eq. 0) .and. (cmask(i,j) .ge. 1)) then
     !Find the id
-    call determine_basin_id(i,j,basins,basin_id,fdir,mask,nx,ny)
+    call determine_basin_id(i,j,basins,basin_id,fdir,cmask,nx,ny)
    endif
   enddo
  enddo

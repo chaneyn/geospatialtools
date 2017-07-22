@@ -13,7 +13,6 @@ def frelief_inv(y,a,b):
  return (1 - (1 - y)**(1/b))**(1/a)
 
 def frelief(x,a,b):
- #return a*x + b*x**2
  return 1 - (1 - x**a)**b
 
 def fwidth(x,a):
@@ -46,6 +45,9 @@ def cluster_data(X,nc):
  else:
   idx = np.arange(X.shape[0])
  #print np.mean(X[idx,:])
+ 
+ #The number of clusters must be equal or smaller than the number of samples
+ if idx.size < nc:nc = idx.size
 
  #Cluster the data
  if nc > 1:
@@ -131,6 +133,7 @@ def compute_cluster_parameters(Xd,maxnc=1000):
   X = []
   #print Xd.keys()
   for var in Xd:
+   #print Xd[var]['min'],Xd[var]['max']
    tmp = normalize_variable(np.copy(Xd[var]['d']),Xd[var]['min'],Xd[var]['max'])
    tmp = ws[Xd.keys().index(var)]*tmp#(tmp-np.min(tmp))/(np.max(tmp)-np.min(tmp))
    X.append(tmp)
@@ -319,7 +322,7 @@ def calculate_hillslope_properties_updated(hillslopes,dem,res,latitude,
  vars = ['latitude','longitude','dem','aspect','tas','prec','slope',
          'width_intercept','slope_intercept','width_slope','slope_slope',
          'length','area','d2c_array','position_array','width_array',
-         'relief','x_aspect','y_aspect','hid']
+         'relief','x_aspect','y_aspect','hid','relief_a','relief_b']
  properties = {}
  for var in vars:properties[var] = []
 
@@ -456,7 +459,10 @@ def calculate_hillslope_properties_updated(hillslopes,dem,res,latitude,
    #fs = [popt[1],popt[0]]
    fs = [z[0],z[1]]
    #Relief
-   #z = np.polyfit(
+   if d2c[1:-1].size > 2:
+    fr, pcov = scipy.optimize.curve_fit(frelief,position[1:-1],d2c[1:-1],bounds=([1.0,1.0],[5.0,5.0]))
+   else:
+    fr = [1.0,1.0]
   
   tmp = {'latitude':latitude[imin:imax+1,jmin:jmax+1],
          'longitude':longitude[imin:imax+1,jmin:jmax+1],
@@ -470,7 +476,10 @@ def calculate_hillslope_properties_updated(hillslopes,dem,res,latitude,
 
   #Add properties to dictionary
   for var in tmp:
-   properties[var].append(np.mean(tmp[var][tmp[var] != -9999]))
+   if np.sum(tmp[var] != -9999) > 0:
+    properties[var].append(np.mean(tmp[var][tmp[var] != -9999]))
+   else:
+    properties[var].append(-9999)
   properties['width_intercept'].append(fw[1])
   properties['slope_intercept'].append(fs[1])
   #ws = fw[0]/fw[1]
@@ -481,6 +490,8 @@ def calculate_hillslope_properties_updated(hillslopes,dem,res,latitude,
   #if ss > 0.001:ss = 0.001
   properties['width_slope'].append(fw[0])
   properties['slope_slope'].append(fs[0])
+  properties['relief_a'].append(fr[0])
+  properties['relief_b'].append(fr[1])
   #properties['d2c_intercept'].append(fz[2])
   properties['length'].append(np.sum(data['length']))
   properties['area'].append(float(np.sum(data['area'])))
@@ -1005,7 +1016,7 @@ def cluster_hillslopes(hillslopes,covariates,hp_in,nclusters,ws):
  
  return (hillslopes_clusters,nhillslopes,hp_out)
 
-def cluster_hillslopes_updated(hillslopes,covariates,hp_in,nclusters,ws,md):
+def cluster_hillslopes_updated(hillslopes,covariates,hp_in,nclusters,ws,dh,max_nbands):
 
  #Add weights to covariates
  for var in covariates:
@@ -1017,7 +1028,8 @@ def cluster_hillslopes_updated(hillslopes,covariates,hp_in,nclusters,ws,md):
   otmp[(np.isnan(otmp) == 1) | (np.isinf(otmp) == 1)] = 0.0
   tmp = np.copy(otmp)
   #Normalize and apply weight
-  tmp = covariates[var]['w']*(tmp-np.min(tmp))/(np.max(tmp)-np.min(tmp))
+  tmp = covariates[var]['w']*normalize_variable(tmp,covariates[var]['min'],covariates[var]['max'])
+  #tmp = covariates[var]['w']*(tmp-np.min(tmp))/(np.max(tmp)-np.min(tmp))
   X.append(tmp)
  X = np.array(X).T
  clusters = cluster_data(X,nclusters)+1
@@ -1057,22 +1069,31 @@ def cluster_hillslopes_updated(hillslopes,covariates,hp_in,nclusters,ws,md):
   else:
    hp_out[var] = []
  for cluster in uclusters:
-  ids = np.where(clusters == cluster)[0]
+  '''ids = np.where(clusters == cluster)[0]
   d = []
   p = []
   w = []
   for id in ids:
+   print id
    d = d + list(hp_in['d2c_array'][id])
    #w = w + (1 + list(hp_in['width_array'][id])
    w = w + list(1 + hp_in['position_array'][id]*hp_in['width_slope'][id])
    p = p + list(hp_in['position_array'][id])
   d = np.array(d)
-  w = np.array(w)
+  w = np.array(w)'''
+  mc = np.where(clusters == cluster)[0]
+  d = hp_in['d2c_array'][mc]
+  w = 1 + hp_in['position_array'][mc]*hp_in['width_slope'][mc]
+  p = hp_in['position_array'][mc]
+  p = np.concatenate(p)
+  d = np.concatenate(d)
+  w = np.concatenate(w)
   hp_out['p'][cluster-1] = p
   hp_out['d'][cluster-1] = d
   hp_out['w'][cluster-1] = w
   #Fit curve to d2c
-  fr, pcov = scipy.optimize.curve_fit(frelief,p,d)#,bounds=([0.0,-1000],[10**4,1000]))
+  #fr, pcov = scipy.optimize.curve_fit(frelief,p,d)#,bounds=([0.0,-1000],[10**4,1000]))
+  fr, pcov = scipy.optimize.curve_fit(frelief,p,d,bounds=([1.0,1.0],[5.0,5.0]))
   hp_out['relief_p0'].append(fr[0])
   hp_out['relief_p1'].append(fr[1])
   #Fit line to width
@@ -1088,8 +1109,8 @@ def cluster_hillslopes_updated(hillslopes,covariates,hp_in,nclusters,ws,md):
   hp_out[var] = np.array(hp_out[var])
 
  #Define the number of elevation tiles per cluster
- tile_relief = md['clustering']['tile_relief']
- max_ntiles = md['clustering']['max_ntiles']
+ tile_relief = dh#md['clustering']['tile_relief']
+ max_ntiles = max_nbands#md['clustering']['max_ntiles']
  nbins = np.round(hp_out['relief']/tile_relief).astype(np.int)
  nbins[nbins == 0] = 1
  nbins[nbins > max_ntiles] = max_ntiles
