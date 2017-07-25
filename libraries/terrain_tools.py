@@ -437,6 +437,8 @@ def calculate_hillslope_properties_updated(hillslopes,dem,res,latitude,
    fw = [0,1]
    #Slope
    fs = [0,s[1]]
+   #relief
+   fr = [1.0,1.0]
   else:
    weights = np.cos(np.linspace(-np.pi/4,np.pi/4,position.size-2))
    weights = weights/np.sum(weights)
@@ -460,7 +462,10 @@ def calculate_hillslope_properties_updated(hillslopes,dem,res,latitude,
    fs = [z[0],z[1]]
    #Relief
    if d2c[1:-1].size > 2:
-    fr, pcov = scipy.optimize.curve_fit(frelief,position[1:-1],d2c[1:-1],bounds=([1.0,1.0],[5.0,5.0]))
+    try:
+     fr, pcov = scipy.optimize.curve_fit(frelief,position[1:-1],d2c[1:-1],bounds=([1.0,1.0],[5.0,5.0]))
+    except:
+     fr = [1.0,1.0]
    else:
     fr = [1.0,1.0]
   
@@ -1093,7 +1098,10 @@ def cluster_hillslopes_updated(hillslopes,covariates,hp_in,nclusters,ws,dh,max_n
   hp_out['w'][cluster-1] = w
   #Fit curve to d2c
   #fr, pcov = scipy.optimize.curve_fit(frelief,p,d)#,bounds=([0.0,-1000],[10**4,1000]))
+  #try:
   fr, pcov = scipy.optimize.curve_fit(frelief,p,d,bounds=([1.0,1.0],[5.0,5.0]))
+  #except:
+  # fr = [1.0,1.0]
   hp_out['relief_p0'].append(fr[0])
   hp_out['relief_p1'].append(fr[1])
   #Fit line to width

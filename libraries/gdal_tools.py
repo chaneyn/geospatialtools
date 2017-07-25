@@ -50,6 +50,70 @@ def read_raster(file):
 
  return data
 
+def read_data(file):
+
+ raster = raster_data()
+ raster.read_data(file)
+
+ return raster
+
+class raster_data:
+
+ def __init__(self,):
+
+  self.data = []
+
+  return
+
+ def read_data(self,file):
+
+  #Read in the raster
+  dataset = gdal.Open(file)
+
+  #Get dimensons
+  nx = dataset.RasterXSize
+  ny = dataset.RasterYSize
+
+  #Retrieve band
+  band = dataset.GetRasterBand(1)
+
+  #Convert to numpy array
+  self.data = band.ReadAsArray(0,0,nx,ny)
+
+  #Associate metadata
+  gt = dataset.GetGeoTransform()
+  cols = dataset.RasterXSize
+  rows = dataset.RasterYSize
+  srs = osgeo.osr.SpatialReference()
+  srs.ImportFromWkt(dataset.GetProjection())
+  self.proj4 = srs.ExportToProj4()
+  self.minx = gt[0]
+  self.miny = gt[3]+rows*gt[5]
+  self.maxx = gt[0]+cols*gt[1]
+  self.maxy = gt[3]
+  self.resx = gt[1]
+  self.resy = gt[5]
+  self.gt = gt
+  self.nx = cols
+  self.ny = rows
+  self.projection = dataset.GetProjection()
+  self.nodata = band.GetNoDataValue()
+
+  return
+
+ def write_data(self,file,driver='GTiff'):
+
+  driver = gdal.GetDriverByName(driver)
+  #dtype = self.dtype
+  ds_out = driver.Create(file,self.nx,self.ny,1,gdal.GDT_Float32)
+  ds_out.GetRasterBand(1).WriteArray(self.data.astype(np.float32))
+  ds_out.SetGeoTransform(self.gt)
+  ds_out.SetProjection(self.projection)
+  ds_out.GetRasterBand(1).SetNoDataValue(self.nodata)
+  ds_out = None
+
+  return
+
 def read_raster_subarea(file,metadata):
 
  #Read in the raster
