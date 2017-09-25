@@ -1,4 +1,159 @@
+subroutine calculate_slope_and_aspect(dem,dx,dy,slope,aspect,nx,ny)
 
+ implicit none
+ integer,intent(in) :: nx,ny
+ real,intent(in),dimension(nx,ny) :: dem,dx,dy
+ real,intent(out),dimension(nx,ny) :: slope,aspect
+ integer :: imin,imax,jmin,jmax,i,j
+ real :: undef,dzdx,dzdy
+ undef = -9999.0
+ slope = dem
+
+ do i=1,nx
+  do j=1,ny
+   if (slope(i,j) .eq. undef) cycle
+   imin = i-1
+   imax = i+1
+   jmin = j-1
+   jmax = j+1
+   if (imin .le. 0)imin = 1
+   if (imax .gt. nx)imax = nx
+   if (jmin .le. 0)jmin = 1
+   if (jmax .gt. ny)jmax = ny
+   !dz/dy
+   dzdy = ((dem(imin,jmin) + 2*dem(i,jmin) + dem(imax,jmin)) &
+          - (dem(imin,jmax) + 2*dem(i,jmax) + dem(imax,jmax))) &
+          /((dy(imin,jmin) + 2*dy(i,jmin) + dy(imax,jmin)) &
+          + (dy(imin,jmax) + 2*dy(i,jmax) + dy(imax,jmax)))
+   !dz/dx
+   dzdx = ((dem(imin,jmin) + 2*dem(imin,j) + dem(imin,jmax)) &
+          - (dem(imax,jmin) + 2*dem(imax,j) + dem(imax,jmax))) &
+          /((dx(imin,jmin) + 2*dx(imin,j) + dx(imin,jmax)) &
+          + (dx(imax,jmin) + 2*dx(imax,j) + dx(imax,jmax))) 
+   !slope
+   slope(i,j) = (dzdx**2 + dzdy**2)**0.5
+   !aspect
+   aspect(i,j) = atan2(dzdy,-dzdx)
+   !aspect(i,j) = atan2(dxdy,dzdy)
+  enddo
+ enddo
+ 
+ end subroutine
+
+subroutine remove_pits(dem,demns,res,nx,ny)
+
+ implicit none
+ integer,intent(in) :: nx,ny
+ real,intent(in),dimension(nx,ny) :: dem
+ real,intent(out),dimension(nx,ny) :: demns
+ real,intent(in) :: res
+ integer :: positions(8,2)
+ integer :: i,j,k,l,pos,count,p,maxp
+ integer :: imin,jmin,imax,jmax,imin0,imax0,jmin0,jmax0
+ imin = 1
+ imax = nx
+ jmin = 1
+ jmax = ny
+ maxp = 10000
+
+ !Copy the dem
+ demns = dem
+
+ !Construct positions array
+ pos = 0
+ do k=-1,1
+  do l=-1,1
+   if ((k == 0) .and. (l == 0)) cycle
+   pos = pos + 1
+   positions(pos,1) = k
+   positions(pos,2) = l
+  enddo
+ enddo
+
+ !Iterate through all cells and find ones that cannot flow anywhere
+ !get flow direction map
+ do p=1,100000
+  imin0 = imin
+  imax0 = imax
+  jmin0 = jmin
+  jmax0 = jmax
+  imin = 99999
+  imax = -99999
+  jmin = 99999
+  jmax = -99999
+  count = 0
+  do i=imin0,imax0
+   do j=jmin0,jmax0
+    call check_remove_pit(i,j,demns,positions,nx,ny,8,count,imax,imin,jmin,jmax,res)
+   enddo
+  enddo
+  if (count .eq. 0)then
+   !zoom out to check 
+   imin = 99999
+   imax = -99999
+   jmin = 99999
+   jmax = -99999
+   count = 0
+   do i=1,nx
+    do j=1,ny
+     call check_remove_pit(i,j,demns,positions,nx,ny,8,count,imax,imin,jmin,jmax,res)
+    enddo
+   enddo
+   if (count .eq. 0)exit
+  endif
+  if (p .eq. maxp)then
+   print*,"pit removal did not converge"
+   exit
+  endif
+  
+ enddo
+
+end subroutine 
+
+recursive subroutine check_remove_pit(i,j,demns,positions,nx,ny,npos,count,&
+                                      imax,imin,jmin,jmax,res)
+ 
+ implicit none
+ integer,intent(in) :: i,j,npos,nx,ny
+ integer,intent(inout) :: count,imin,imax,jmin,jmax
+ real,intent(inout),dimension(nx,ny) :: demns
+ integer,intent(in),dimension(npos,2) :: positions
+ real,intent(in) :: res
+ integer :: inew,jnew,pos,k,l,tmp(1)
+ real :: slopes(8),length
+ real :: minslope = 0.01
+
+ if (demns(i,j) .eq. -9999)return
+ if ((i .eq. 1) .or. (i .eq. nx) .or. (j .eq. 1) .or. (j .eq. ny))return
+ slopes = -9999.0
+ do pos=1,8
+  k = positions(pos,1)
+  l = positions(pos,2)
+  if ((i+k .lt. 1) .or. (j+l .lt. 1) .or. (i+k .gt. nx) .or. &
+      (j+l .gt. ny)) cycle !skip due to on boundary
+  if ((k + l .eq. -2) .or. (k + l .eq. 2) .or. (k + l .eq. 0))then
+      length = 1.41421356237*res
+  else
+      length = res
+  endif
+  slopes(pos) = (demns(i,j) - demns(i+k,j+l))/length
+ enddo
+ if (maxval(slopes) .le. 0)then
+  if (i .gt. imax)imax = i
+  if (j .gt. jmax)jmax = j
+  if (i .lt. imin)imin = i
+  if (j .lt. jmin)jmin = j
+  tmp = maxloc(slopes)
+  inew = i+positions(tmp(1),1)
+  jnew = j+positions(tmp(1),2)
+  demns(i,j) = demns(inew,jnew)+minslope*res
+  !demns(inew,jnew) = demns(i,j) - minslope*res
+  count = count + 1
+  call check_remove_pit(inew,jnew,demns,positions,nx,ny,npos,count,imax,imin,jmin,jmax,res)
+ endif
+    
+end subroutine
+    
 subroutine calculate_d8_acc(dem,mask,res,area,fdir,nx,ny)
 
  implicit none
@@ -9,11 +164,12 @@ subroutine calculate_d8_acc(dem,mask,res,area,fdir,nx,ny)
  integer,intent(out),dimension(nx,ny,2) :: fdir
  integer,allocatable,dimension(:,:) :: positions
  real,allocatable,dimension(:) :: slopes
- real :: length,undef
+ real :: length,undef,demns(nx,ny)
  integer :: catchment(nx,ny)
  integer :: i,j,k,l,pos,tmp(1),npos=8
  allocate(positions(npos,2),slopes(npos))
  undef = -9999.0
+ demns = dem
 
  !Construct positions array
  pos = 0
@@ -40,7 +196,7 @@ subroutine calculate_d8_acc(dem,mask,res,area,fdir,nx,ny)
     else 
        length = res
     endif
-    slopes(pos) = (dem(i,j) - dem(i+k,j+l))/length
+    slopes(pos) = (demns(i,j) - demns(i+k,j+l))/length
    enddo
    if (maxval(slopes) .gt. 0) then
     tmp = maxloc(slopes)
@@ -56,7 +212,7 @@ subroutine calculate_d8_acc(dem,mask,res,area,fdir,nx,ny)
  catchment(:,:) = 0
  do i=1,nx
   do j=1,ny
-   call neighbr_check_d8(i,j,dem,catchment,fdir,positions,nx,ny,npos)
+   call neighbr_check_d8(i,j,demns,catchment,fdir,positions,nx,ny,npos)
   enddo
  enddo
 

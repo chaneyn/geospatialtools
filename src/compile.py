@@ -19,6 +19,8 @@ subroutines = 'calculate_d8_acc \
               assign_clusters_to_hillslopes \
               calculate_hru_properties \
               retrieve_basin_properties \
+              calculate_slope_and_aspect \
+              remove_pits \
               gap_fill_hrus'
 
 #Create library
