@@ -2,6 +2,8 @@ import os
 #Terrain tools
 #os.system('rm -rf terrain_tools.pyf')
 os.system('rm -rf *.dSYM')
+#compile modules
+os.system('gfortran -fPIC -c planchon_2001.f90')
 #subroutines
 subroutines = 'calculate_d8_acc \
 	      calculate_d8_acc_neighbors \
@@ -21,10 +23,11 @@ subroutines = 'calculate_d8_acc \
               retrieve_basin_properties \
               calculate_slope_and_aspect \
               remove_pits \
+              remove_pits_planchon \
               gap_fill_hrus'
 
 #Create library
-cmd = 'f2py -c only: %s : -m terrain_tools_fortran terrain_tools.f90 -lgomp --fcompiler=gnu95 --f90flags="-Wall -pedantic -fopenmp -O3"' % subroutines
+cmd = 'f2py -c only: %s : *.o -m terrain_tools_fortran terrain_tools.f90 -lgomp --fcompiler=gnu95 --f90flags="-Wall -pedantic -fopenmp -O3"' % subroutines
 print cmd
 os.system(cmd)
 

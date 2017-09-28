@@ -1,3 +1,15 @@
+subroutine remove_pits_planchon(dem,demns,nx,ny)
+
+ use planchon_2001, only: remove_pits
+ implicit none
+ integer,intent(in) :: nx,ny
+ real,intent(in),dimension(nx,ny) :: dem
+ real,intent(out),dimension(nx,ny) :: demns
+
+ call remove_pits(dem,demns,nx,ny)
+
+end subroutine
+
 subroutine calculate_slope_and_aspect(dem,dx,dy,slope,aspect,nx,ny)
 
  implicit none
@@ -87,6 +99,7 @@ subroutine remove_pits(dem,demns,res,nx,ny)
     call check_remove_pit(i,j,demns,positions,nx,ny,8,count,imax,imin,jmin,jmax,res)
    enddo
   enddo
+  !print*,p,count
   if (count .eq. 0)then
    !zoom out to check 
    imin = 99999
@@ -185,12 +198,14 @@ subroutine calculate_d8_acc(dem,mask,res,area,fdir,nx,ny)
  !get flow direction map
  do i=1,nx
   do j=1,ny
-   slopes = 0.0
+   slopes = -9999.0
    do pos=1,npos
     k = positions(pos,1)
     l = positions(pos,2)
     if ((i+k .lt. 1) .or. (j+l .lt. 1) .or. (i+k .gt. nx) .or. &
-        (j+l .gt. ny)) cycle !skip due to on boundary
+        (j+l .gt. ny)) then
+      cycle !skip due to on boundary
+    endif
     if ((k + l .eq. -2) .or. (k + l .eq. 2) .or. (k + l .eq. 0))then
         length = 1.41421356237*res
     else 
@@ -200,6 +215,10 @@ subroutine calculate_d8_acc(dem,mask,res,area,fdir,nx,ny)
    enddo
    if (maxval(slopes) .gt. 0) then
     tmp = maxloc(slopes)
+    fdir(i,j,1) = i+positions(tmp(1),1)
+    fdir(i,j,2) = j+positions(tmp(1),2)
+   else if(minval(slopes) .eq. -9999.0) then
+    tmp = minloc(slopes)
     fdir(i,j,1) = i+positions(tmp(1),1)
     fdir(i,j,2) = j+positions(tmp(1),2)
    else

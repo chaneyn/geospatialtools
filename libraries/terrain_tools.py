@@ -9,6 +9,28 @@ import copy
 import time
 #import matplotlib.pyplot as plt
 
+def calculate_distance(lat0,lat1,lon0,lon1):
+
+ R = 6372800 #meters
+ dlat = np.deg2rad(lat1-lat0)
+ dlon = np.deg2rad(lon1-lon0)
+ lat1 = np.deg2rad(lat1)
+ lat0 = np.deg2rad(lat0)
+ a = np.sin(dlat/2)**2 + np.cos(lat0)*np.cos(lat1)*np.sin(dlon/2)**2
+ c = 2*np.arctan2(np.sqrt(a),np.sqrt(1-a))
+ return R*c
+
+def calculate_area(r):
+
+ lats = np.linspace(r.miny,r.maxy,2*r.ny+1)
+ lons = np.linspace(r.minx,r.maxx,2*r.nx+1)
+ (lats,lons) = np.meshgrid(lats,lons)
+ r.dx = calculate_distance(lats[1::2,1::2],lats[1::2,1::2],lons[0:-2:2,0:-2:2],lons[2::2,2::2])
+ r.dy = calculate_distance(lats[0:-2:2,0:-2:2],lats[2::2,2::2],lons[1::2,1::2],lons[1::2,1::2])
+ r.area = r.dx*r.dy
+
+ return r
+
 def frelief_inv(y,a,b):
  return (1 - (1 - y)**(1/b))**(1/a)
 
@@ -340,6 +362,7 @@ def calculate_hillslope_properties_updated(hillslopes,dem,res,latitude,
  for id in masks.keys():
   masks[id] = np.array(masks[id])
 
+
  #Iterate through each hillslope to calculate properties
  for uh in masks.keys():
   tic = time.time()
@@ -356,11 +379,15 @@ def calculate_hillslope_properties_updated(hillslopes,dem,res,latitude,
   #Bin the d2c
   m = shs == uh
   sd2c[~m] = -9999
-  nc = min(10,np.sum(m)/3) 
+  nc = min(25,np.sum(m)/3) 
+  nc = min(nc,np.unique(sd2c[m]).size)
   if nc > 1:
-   model = sklearn.cluster.KMeans(n_clusters=nc,random_state=35799)
+   #tmp = np.sort(sd2c[m])
+   #bin_edges = tmp[np.arange(0,tmp.size,np.int(np.ceil(tmp.size/(nc+1))))]
+   #tmp = np.digitize(sd2c[m],bin_edges)
    X = sd2c[m]
    X = X[:,np.newaxis]
+   model = sklearn.cluster.KMeans(n_clusters=nc,random_state=35799)
    tmp = model.fit_predict(X)+1
   else:
    tmp = np.array([1,])
@@ -461,13 +488,15 @@ def calculate_hillslope_properties_updated(hillslopes,dem,res,latitude,
    #fs = [popt[1],popt[0]]
    fs = [z[0],z[1]]
    #Relief
-   if d2c[1:-1].size > 2:
+   tic = time.time()
+   if d2c[1:-1].size > 10:
     try:
      fr, pcov = scipy.optimize.curve_fit(frelief,position[1:-1],d2c[1:-1],bounds=([1.0,1.0],[5.0,5.0]))
     except:
      fr = [1.0,1.0]
    else:
     fr = [1.0,1.0]
+   #print time.time() - tic
   
   tmp = {'latitude':latitude[imin:imax+1,jmin:jmax+1],
          'longitude':longitude[imin:imax+1,jmin:jmax+1],
