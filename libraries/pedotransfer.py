@@ -91,22 +91,22 @@ def FAO_Soil_Texture(S,C,ST):
  msilt = np.array([8,33,17,20,12,25,19])
 
  #Calculate the closest texture class
+ #Segment
  m = (S.mask == 0) & (C.mask == 0) & (ST.mask == 0)
- dsand,dclay,dsilt = [],[],[]
+ ed = []
  for i in xrange(7):
-  dsand.append(S[m] - msand[i])
-  dclay.append(C[m] - mclay[i])
-  dsilt.append(ST[m] - msilt[i])
- dsand = np.array(dsand)
- dclay = np.array(dclay)
- dsilt = np.array(dsilt)
- 
- #Calculate the euclidean distance
- ed = (dsand**2 + dsilt**2 + dclay**2)**0.5
+  dsand = S[m] - msand[i]
+  dclay = C[m] - mclay[i]
+  dsilt = ST[m] - msilt[i]
+  #Calculate the euclidean distance
+  ed.append((dsand**2 + dsilt**2 + dclay**2)**0.5)
+
+ #ed = (dsand**2 + dsilt**2 + dclay**2)**0.5
 
  #Determine the id
+ ed = np.array(ed)
  tmp = np.argmin(ed,axis=0) + 1
- tclass = np.zeros(S.shape)
+ tclass = np.zeros(S.shape).astype(np.float32)
  tclass[:] = -9999.0
  tclass[m] = tmp
  tclass = np.ma.masked_array(tclass,tclass==-9999)

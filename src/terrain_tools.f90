@@ -1,12 +1,13 @@
-subroutine remove_pits_planchon(dem,demns,nx,ny)
+subroutine remove_pits_planchon(dem,res,demns,nx,ny)
 
  use planchon_2001, only: remove_pits
  implicit none
  integer,intent(in) :: nx,ny
+ real,intent(in) :: res
  real,intent(in),dimension(nx,ny) :: dem
  real,intent(out),dimension(nx,ny) :: demns
 
- call remove_pits(dem,demns,nx,ny)
+ call remove_pits(dem,demns,res,nx,ny)
 
 end subroutine
 
@@ -246,6 +247,119 @@ subroutine calculate_d8_acc(dem,mask,res,area,fdir,nx,ny)
   area = undef
  endwhere
 
+end subroutine
+
+subroutine calculate_d8_acc_wipoints(dem,mask,ipoints,res,area,fdir,nx,ny)
+
+ implicit none
+ integer,intent(in) :: nx,ny
+ real,intent(in),dimension(nx,ny) :: dem,mask
+ integer,intent(in),dimension(nx,ny) :: ipoints
+ real,intent(in) :: res
+ real,intent(out),dimension(nx,ny) :: area
+ integer,intent(out),dimension(nx,ny,2) :: fdir
+ integer,allocatable,dimension(:,:) :: positions
+ real,allocatable,dimension(:) :: slopes
+ real :: length,undef,demns(nx,ny)
+ integer :: catchment(nx,ny),pc
+ integer :: i,j,k,l,pos,tmp(1),npos=8
+ allocate(positions(npos,2),slopes(npos))
+ undef = -9999.0
+ demns = dem
+
+ !Construct positions array
+ pos = 0
+ do k=-1,1
+  do l=-1,1
+   if ((k == 0) .and. (l == 0)) cycle
+   pos = pos + 1
+   positions(pos,1) = k
+   positions(pos,2) = l
+  enddo
+ enddo
+
+ !get flow direction map
+ do i=1,nx
+  do j=1,ny
+   slopes = -9999.0
+   do pos=1,npos
+    k = positions(pos,1)
+    l = positions(pos,2)
+    if ((i+k .lt. 1) .or. (j+l .lt. 1) .or. (i+k .gt. nx) .or. &
+        (j+l .gt. ny)) then
+      cycle !skip due to on boundary
+    endif
+    if ((k + l .eq. -2) .or. (k + l .eq. 2) .or. (k + l .eq. 0))then
+        length = 1.41421356237*res
+    else 
+       length = res
+    endif
+    slopes(pos) = (demns(i,j) - demns(i+k,j+l))/length
+   enddo
+   if (maxval(slopes) .gt. 0) then
+    tmp = maxloc(slopes)
+    fdir(i,j,1) = i+positions(tmp(1),1)
+    fdir(i,j,2) = j+positions(tmp(1),2)
+   else if(minval(slopes) .eq. -9999.0) then
+    tmp = minloc(slopes)
+    fdir(i,j,1) = i+positions(tmp(1),1)
+    fdir(i,j,2) = j+positions(tmp(1),2)
+   else
+    fdir(i,j,:) = int(undef)
+   endif
+  enddo
+ enddo
+
+ !get the cell count
+ catchment(:,:) = 0
+ do i=1,nx
+  do j=1,ny
+   if (ipoints(i,j) .eq. undef)cycle
+   pc = 0
+   call neighbr_check_d8_wipoints(i,j,demns,catchment,fdir,positions,nx,ny,npos,pc)
+  enddo
+ enddo
+
+ !Calculate accumulation area
+ area = res**2*catchment
+
+ !Where the mask is 0 set area to undefined
+ where (mask .eq. 0)
+  area = undef
+ endwhere
+ where (fdir(:,:,1) .eq. -9999)
+  area = undef
+ endwhere
+
+end subroutine
+
+recursive subroutine neighbr_check_d8_wipoints(i,j,dem,catchment,fdir,positions,nx,ny,npos,pc)
+ 
+ implicit none
+ integer,intent(in) :: i,j,npos,nx,ny
+ real,intent(in),dimension(nx,ny) :: dem
+ integer,intent(inout),dimension(nx,ny) :: catchment
+ integer,intent(in),dimension(nx,ny,2) :: fdir
+ integer,intent(in),dimension(npos,2) :: positions
+ integer,intent(inout) :: pc
+ integer :: ipos,inew,jnew
+
+ if (catchment(i,j) .le. 0)then
+  catchment(i,j) = catchment(i,j) + pc + 1
+  pc = catchment(i,j)
+  do ipos=1,npos
+   inew = i+positions(ipos,1)
+   jnew = j+positions(ipos,2)
+   if ((inew .lt. 1) .or. (jnew .lt. 1) .or. (inew .gt. nx) .or. (jnew .gt. ny))cycle
+   if (dem(i,j) .gt. dem(inew,jnew))then
+    if ((fdir(i,j,1) .eq. inew) .and. (fdir(i,j,2) .eq. jnew))then
+     call neighbr_check_d8_wipoints(inew,jnew,dem,catchment,fdir,positions,nx,ny,npos,pc)
+     !catchment(inew,jnew) = catchment(inew,jnew) + catchment(i,j)
+    endif
+   endif
+  enddo
+ endif
+    
 end subroutine
 
 recursive subroutine neighbr_check_d8(i,j,dem,catchment,fdir,positions,nx,ny,npos)

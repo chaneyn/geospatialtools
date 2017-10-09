@@ -7,18 +7,22 @@ integer :: npos = 8
 integer :: pos,k,l,positions(8,2)
 real :: undef = -9999
 real :: wmax = 1000000
-real :: eps = 0.1
+real :: eps
 integer :: r0(8),c0(8),dr(8),dc(8),fr(8),fc(8)
 
 contains
 
-subroutine remove_pits(z,w,nx,ny)
+subroutine remove_pits(z,w,res,nx,ny)
 
  implicit none
  integer,intent(in) :: nx,ny
- real,intent(in) :: z(nx,ny)
+ real,intent(in) :: z(nx,ny),res
  real,intent(out) :: w(nx,ny)
  integer :: b(nx,ny)
+ real :: minslope = 0.0001
+ 
+ !Define minimum elevation change
+ eps = minslope*res
 
  !Initialize others 
  r0 = (/1,ny,1,ny,1,ny,1,ny/)

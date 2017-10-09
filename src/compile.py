@@ -6,6 +6,7 @@ os.system('rm -rf *.dSYM')
 os.system('gfortran -fPIC -c planchon_2001.f90')
 #subroutines
 subroutines = 'calculate_d8_acc \
+              calculate_d8_acc_wipoints \
 	      calculate_d8_acc_neighbors \
               calculate_mfd_acc \
               neighbr_check_d8 \

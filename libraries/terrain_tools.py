@@ -7,6 +7,7 @@ import sklearn.linear_model
 import scipy.stats
 import copy
 import time
+import cPickle as pickle
 #import matplotlib.pyplot as plt
 
 def calculate_distance(lat0,lat1,lon0,lon1):
@@ -22,11 +23,17 @@ def calculate_distance(lat0,lat1,lon0,lon1):
 
 def calculate_area(r):
 
- lats = np.linspace(r.miny,r.maxy,2*r.ny+1)
- lons = np.linspace(r.minx,r.maxx,2*r.nx+1)
+ lats = np.linspace(r.miny,r.maxy,r.ny+1)#2*r.ny+1)
+ lons = np.linspace(r.minx,r.maxx,r.nx+1)#2*r.nx+1)
  (lats,lons) = np.meshgrid(lats,lons)
- r.dx = calculate_distance(lats[1::2,1::2],lats[1::2,1::2],lons[0:-2:2,0:-2:2],lons[2::2,2::2])
- r.dy = calculate_distance(lats[0:-2:2,0:-2:2],lats[2::2,2::2],lons[1::2,1::2],lons[1::2,1::2])
+ #r.dx = calculate_distance(lats[1::2,1::2],lats[1::2,1::2],lons[0:-2:2,0:-2:2],lons[2::2,2::2])
+ r.dx = calculate_distance((lats[0:-1,0:-1]+lats[1:,1:])/2,
+                           (lats[0:-1,0:-1]+lats[1:,1:])/2,
+                           lons[0:-1,0:-1],lons[1:,1:]).astype(np.float32)
+ #r.dy = calculate_distance(lats[0:-2:2,0:-2:2],lats[2::2,2::2],lons[1::2,1::2],lons[1::2,1::2])
+ r.dy = calculate_distance(lats[0:-1,0:-1],lats[1:,1:],
+                           (lons[0:-1,0:-1]+lons[1:,1:])/2,
+                           (lons[0:-1,0:-1]+lons[1:,1:])/2).astype(np.float32)
  r.area = r.dx*r.dy
 
  return r
@@ -334,21 +341,21 @@ def reduce_basin_number(basins,bp,nbasins_goal):
  return basins
 
 def calculate_hillslope_properties_updated(hillslopes,dem,res,latitude,
-    longitude,depth2channel,slope,aspect,tas,prec):
+    longitude,depth2channel,slope,aspect,tas,prec,cdir):
 
  #Convert aspect to cartesian coordinates
  x_aspect = np.cos(aspect)
  y_aspect = np.sin(aspect)
+ print np.min(slope),np.mean(slope),np.max(slope)
 
  #Initialize properties dictionary
  vars = ['latitude','longitude','dem','aspect','tas','prec','slope',
-         'width_intercept','slope_intercept','width_slope','slope_slope',
+         #'width_intercept','slope_intercept','width_slope','slope_slope',
+         'width_intercept','width_slope',
          'length','area','d2c_array','position_array','width_array',
          'relief','x_aspect','y_aspect','hid','relief_a','relief_b']
  properties = {}
  for var in vars:properties[var] = []
-
- #Cluster the depth to channel data (Optional)
 
  #Assemble masks
  tic = time.time()
@@ -362,10 +369,10 @@ def calculate_hillslope_properties_updated(hillslopes,dem,res,latitude,
  for id in masks.keys():
   masks[id] = np.array(masks[id])
 
-
  #Iterate through each hillslope to calculate properties
+ count = 0
  for uh in masks.keys():
-  tic = time.time()
+  #tic = time.time()
   imin = np.min(masks[uh][:,0])
   imax = np.max(masks[uh][:,0])
   jmin = np.min(masks[uh][:,1])
@@ -379,16 +386,16 @@ def calculate_hillslope_properties_updated(hillslopes,dem,res,latitude,
   #Bin the d2c
   m = shs == uh
   sd2c[~m] = -9999
-  nc = min(25,np.sum(m)/3) 
+  nc = min(25,np.ceil(np.sum(m)*res**2/8100.0))
   nc = min(nc,np.unique(sd2c[m]).size)
   if nc > 1:
-   #tmp = np.sort(sd2c[m])
-   #bin_edges = tmp[np.arange(0,tmp.size,np.int(np.ceil(tmp.size/(nc+1))))]
-   #tmp = np.digitize(sd2c[m],bin_edges)
-   X = sd2c[m]
-   X = X[:,np.newaxis]
-   model = sklearn.cluster.KMeans(n_clusters=nc,random_state=35799)
-   tmp = model.fit_predict(X)+1
+   tmp = np.sort(sd2c[m])
+   bin_edges = tmp[np.arange(0,tmp.size,np.int(np.ceil(tmp.size/(nc+1))))]
+   tmp = np.digitize(sd2c[m],bin_edges)
+   #X = sd2c[m]
+   #X = X[:,np.newaxis]
+   #model = sklearn.cluster.KMeans(n_clusters=nc,random_state=35799)
+   #tmp = model.fit_predict(X)+1
   else:
    tmp = np.array([1,])
   cls = np.copy(sd2c)
@@ -416,45 +423,107 @@ def calculate_hillslope_properties_updated(hillslopes,dem,res,latitude,
   s = data['slope']
   d2c = data['d2c']
   length = []
+  slopes = []
+  hand = []
   position = []
-  pos0 = 0
+  ns = []
   #Ensure there are no zero slopes
   s[s == 0] = 10**-4
+  #Use the d2c as the vertices
+  for i in xrange(data['d2c'].size):
+   #if (i == data['d2c'].size):
+   # l = (d2c[i-1]-r)/s[i-1]#/2
+   # slp = s[i-1]
+   # hand.append(r + l*slp/2)
+   # r = r + l*slp
+   # slopes.append(slp)
+   # pos = pos + l/2
+   # position.append(pos)
+   if i == 0:
+    l = d2c[i]/s[i]#/2
+    slp = s[i]
+    hand.append(l*slp/2)
+    r = l*slp
+    slopes.append(slp)
+    pos = l/2
+    position.append(pos)
+   else:
+    l = (d2c[i] - r)/((s[i] + s[i-1])/2)
+    slp = (s[i] + s[i-1])/2
+    hand.append(r + l*slp/2)
+    r = r + l*slp
+    slopes.append((s[i] + s[i-1])/2)
+    pos = pos + l/2
+    position.append(pos)
+   length.append(l)
+  length = np.array(length)
+  slopes = np.array(slopes)
+  position = np.array(position)
+  hand = np.array(hand)
+  #Quality control
+  if (np.min(length) == 0.0) or (np.max(hand) == 0.0):
+   hand = np.array([0.5,1.5])
+   length = np.array([10.0,10.0])
+   slopes = np.array([0.1,0.1])
+   position = np.array([5.0,15.0])
+  #Place data
+  data['position'] = position
+  data['length'] = length
+  data['slope'] = slopes
+  data['d2c'] = hand
+  '''length = []
+  pos0 = 0
+  dtmp = 0
   for i in xrange(data['d2c'].size):
    if (data['d2c'].size == 1):
-    ld = (d2c[i])/(s[i]/2)
+    ld = d2c[i]/s[i]/2
     lu = ld
+    ns.append(s[i])
    elif (i == data['d2c'].size-1):
     ld = ((d2c[i]-d2c[i-1])/((s[i]+s[i-1])/2))/2
     lu = ld
+    ns.append((s[i]+s[i-1])/2)
    elif i == 0:
-    ld = (d2c[i])/(s[i]/2)
+    ld = d2c[i]/s[i]/2
     lu = ((d2c[i+1]-d2c[i])/((s[i+1]+s[i])/2))/2
+    ns.append((ld*s[i]+lu*(s[i+1]+s[i]))/(ld + lu))
    else:
     ld = ((d2c[i] - d2c[i-1])/((s[i-1]+s[i])/2))/2
     lu = ((d2c[i+1] - d2c[i])/((s[i]+s[i+1])/2))/2
+    ns.append((ld*(s[i-1]+s[i]) + lu*(s[i]+s[i+1]))/(ld + lu))
    #Ensure ld/lu are not 0 (HACK)
    if ld == 0:
-    ld = 1.0 #meter
+    ld = res#1.0 #meter
+    ns.append(0.001)
    if lu == 0:
-    lu = 1.0 #meter
+    lu = res#1.0 #meter
+    ns.append(0.001)
+   dtmp += (ld+lu)*s[i]
+   print ld*s[i],(ld+lu)*s[i],s[i],d2c[i],dtmp
 
    pos = pos0 + ld
    position.append(pos)
    pos0 = pos + lu
-   length.append(ld+lu)
-  data['position'] = np.array(position)
-  data['length'] = np.array(length)
+   length.append(ld+lu)'''
+  #data['position'] = np.array(position)
+  #data['length'] = np.array(length)
+  #data['nslope'] = np.array(ns)
   
   #Calculate width 
   data['width'] = data['area']/data['length']
+  data['width']
   
   #Fit line to width and depth2channel (slope is derivative of the second)
-  position = np.array([0.,]+list(data['position'])+[np.sum(data['length']),])
+  position = np.array([0.,]+list(data['position'])+[data['length'][-1]/2,])
   w = np.array([data['width'][0],]+list(data['width'])+[data['width'][-1],])
-  s = np.array([0.0,]+list(data['slope'])+[0.0,])
-  d2c = np.array([0.0,]+list(data['d2c'])+[data['d2c'][-1]+data['slope'][-1]*data['length'][-1]/2,])
+  #s = np.array([0.0,]+list(data['slope']))#+[0.0,])
+  #s = np.array([0.0,]+list(data['nslope'])+[0.0,])
+  #d2c = np.array([0.0,]+list(data['d2c'])+[data['d2c'][-1]+data['slope'][-1]*data['length'][-1]/2,])
+  d2c = np.array([0.0,]+list(data['d2c'])+[data['d2c'][-1],])
   relief = d2c[-1]
+  #print data['length']
+  #print np.mean(data['nslope'])*np.sum(data['length'])
+  #print 't,ap',relief,np.sum(data['slope']*data['length'])
   #Normalize position,width,d2c
   position = position/np.sum(length)
   d2c = d2c/relief
@@ -463,7 +532,7 @@ def calculate_hillslope_properties_updated(hillslopes,dem,res,latitude,
    #Width
    fw = [0,1]
    #Slope
-   fs = [0,s[1]]
+   #fs = [0,s[1]]
    #relief
    fr = [1.0,1.0]
   else:
@@ -479,16 +548,16 @@ def calculate_hillslope_properties_updated(hillslopes,dem,res,latitude,
    if fw[0] > 99:fw[0] = 99
    if fw[0] < -0.99:fw[0] = -0.99
    #Slope
-   z = np.polyfit(position[1:-1],s[1:-1],1,w=weights)
-   if z[0] < -1: z[0] = -1
-   if z[0] > 1: z[0] = 1
-   if z[1] < 0: z[1] = 0
-   if z[1] > 1: z[1] = 1
+   #z = np.polyfit(position[1:-1],s[1:-1],1,w=weights)
+   #if z[0] < -1: z[0] = -1
+   #if z[0] > 1: z[0] = 1
+   #if z[1] < 0: z[1] = 0
+   #if z[1] > 1: z[1] = 1
    #popt, pcov = scipy.optimize.curve_fit(fslope,position,s,bounds=([0.0,-1.0],[1.0,1.0]))
    #fs = [popt[1],popt[0]]
-   fs = [z[0],z[1]]
+   #fs = [z[0],z[1]]
    #Relief
-   tic = time.time()
+   #tic = time.time()
    if d2c[1:-1].size > 10:
     try:
      fr, pcov = scipy.optimize.curve_fit(frelief,position[1:-1],d2c[1:-1],bounds=([1.0,1.0],[5.0,5.0]))
@@ -496,7 +565,6 @@ def calculate_hillslope_properties_updated(hillslopes,dem,res,latitude,
      fr = [1.0,1.0]
    else:
     fr = [1.0,1.0]
-   #print time.time() - tic
   
   tmp = {'latitude':latitude[imin:imax+1,jmin:jmax+1],
          'longitude':longitude[imin:imax+1,jmin:jmax+1],
@@ -515,18 +583,11 @@ def calculate_hillslope_properties_updated(hillslopes,dem,res,latitude,
    else:
     properties[var].append(-9999)
   properties['width_intercept'].append(fw[1])
-  properties['slope_intercept'].append(fs[1])
-  #ws = fw[0]/fw[1]
-  #if ws < -0.01:ws = -0.01
-  #if ws > 0.01:ws = 0.01
-  #ss = fs[0]
-  #if ss < -0.001:ss = -0.001
-  #if ss > 0.001:ss = 0.001
+  #properties['slope_intercept'].append(fs[1])
   properties['width_slope'].append(fw[0])
-  properties['slope_slope'].append(fs[0])
+  #properties['slope_slope'].append(fs[0])
   properties['relief_a'].append(fr[0])
   properties['relief_b'].append(fr[1])
-  #properties['d2c_intercept'].append(fz[2])
   properties['length'].append(np.sum(data['length']))
   properties['area'].append(float(np.sum(data['area'])))
   properties['relief'].append(relief)
@@ -534,11 +595,21 @@ def calculate_hillslope_properties_updated(hillslopes,dem,res,latitude,
   properties['d2c_array'].append(d2c)
   properties['width_array'].append(w)
   properties['hid'].append(uh)
+  length = np.sum(data['length'])
+  #hslope = np.mean(tmp['slope'][m])#[tmp['slope'] != -9999])
+  #fs = data['length']/length
+  #print 'slope',hslope
+  #print 'crelief',hslope*length
+  #if count == 2:exit()
+  count += 1
   
  #Finalize the properties
  for var in properties:properties[var] = np.array(properties[var])
 
- return properties
+ #return properties
+ #Write out output
+ pickle.dump(properties,open('%s/hillslope_properties.pck' % cdir,'wb'),pickle.HIGHEST_PROTOCOL)
+ return
 
 def calculate_hillslope_properties(hillslopes,dem,basins,res,latitude,
     longitude,depth2channel,slope,aspect,cplan,cprof,channels,tas,prec):
@@ -811,7 +882,7 @@ def create_hillslope_tiles_updated(hillslopes,depth2channel,hillslopes_full,hp_i
 
  return clusters
 
-def create_hrus(hillslopes,htiles,covariates,nclusters,flag,maxnc):
+def create_hrus(hillslopes,htiles,covariates,nclusters,flag,maxnc,cdir):
 
  #Curate the covariates
  for var in covariates: 
@@ -871,9 +942,13 @@ def create_hrus(hillslopes,htiles,covariates,nclusters,flag,maxnc):
  ttf.cleanup_hillslopes(hrus)
  hrus[hrus >= 0] = hrus[hrus >= 0] + 1
 
- return hrus
+ #return hrus
+ #Write out output
+ pickle.dump(hrus,open('%s/hrus.pck' % cdir,'wb'),pickle.HIGHEST_PROTOCOL)
+ 
+ return
 
-def calculate_hru_properties(hillslopes,tiles,channels,res,nhillslopes,hrus,depth2channel,slope,basins):
+def calculate_hru_properties(hillslopes,tiles,channels,res,nhillslopes,hrus,depth2channel,slope,basins,cdir):
 
  tmp = np.unique(hrus)
  tmp = tmp[tmp != -9999]
@@ -892,9 +967,13 @@ def calculate_hru_properties(hillslopes,tiles,channels,res,nhillslopes,hrus,dept
                    'depth2channel':hru_dem,
                    'frac':hru_area/np.sum(hru_area)}
 
- return hru_properties
+ #return hru_properties
+ #Write out output
+ pickle.dump(hru_properties,open('%s/hru_properties.pck' % cdir,'wb'),pickle.HIGHEST_PROTOCOL)
 
-def calculate_hru_properties_updated(hillslopes,tiles,res,hrus,depth2channel,slope,hp):
+ return
+
+def calculate_hru_properties_updated(hillslopes,tiles,res,hrus,depth2channel,slope,hp,cdir):
 
  #Get the hillslope fractions
  fs = []
@@ -990,7 +1069,11 @@ def calculate_hru_properties_updated(hillslopes,tiles,res,hrus,depth2channel,slo
   #Set the overall fraction
   hru_properties['frac'][m] = hp['frac'][ih]*hru_properties['hillslope_frac'][m]
 
- return hru_properties
+ #return hru_properties
+ #Write out output
+ pickle.dump(hru_properties,open('%s/hru_properties.pck' % cdir,'wb'),pickle.HIGHEST_PROTOCOL)
+
+ return
                        
 #def cluster_hillslopes(hp,hillslopes,nclusters,covariates):
 def cluster_hillslopes(hillslopes,covariates,hp_in,nclusters,ws):
