@@ -1423,6 +1423,7 @@ subroutine calculate_depth2channel(channels,mask,fdir,dem,depth2channel,nx,ny)
  endwhere
 
  !Iterate cell by cell
+ cd = 0.0
  do i=1,nx
   do j=1,ny
    !Only work on this cell if the basin id is unknown and the mask is positive

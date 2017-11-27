@@ -346,7 +346,6 @@ def calculate_hillslope_properties_updated(hillslopes,dem,res,latitude,
  #Convert aspect to cartesian coordinates
  x_aspect = np.cos(aspect)
  y_aspect = np.sin(aspect)
- print np.min(slope),np.mean(slope),np.max(slope)
 
  #Initialize properties dictionary
  vars = ['latitude','longitude','dem','aspect','tas','prec','slope',
@@ -390,7 +389,7 @@ def calculate_hillslope_properties_updated(hillslopes,dem,res,latitude,
   nc = min(nc,np.unique(sd2c[m]).size)
   if nc > 1:
    tmp = np.sort(sd2c[m])
-   bin_edges = tmp[np.arange(0,tmp.size,np.int(np.ceil(tmp.size/(nc+1))))]
+   bin_edges = tmp[np.arange(0,tmp.size,np.int(np.ceil(float(tmp.size)/(nc+1))))]
    tmp = np.digitize(sd2c[m],bin_edges)
    #X = sd2c[m]
    #X = X[:,np.newaxis]
@@ -466,6 +465,7 @@ def calculate_hillslope_properties_updated(hillslopes,dem,res,latitude,
    length = np.array([10.0,10.0])
    slopes = np.array([0.1,0.1])
    position = np.array([5.0,15.0])
+   data['area'] = np.array([900.0,900.0])
   #Place data
   data['position'] = position
   data['length'] = length
@@ -511,7 +511,6 @@ def calculate_hillslope_properties_updated(hillslopes,dem,res,latitude,
   
   #Calculate width 
   data['width'] = data['area']/data['length']
-  data['width']
   
   #Fit line to width and depth2channel (slope is derivative of the second)
   position = np.array([0.,]+list(data['position'])+[data['length'][-1]/2,])
@@ -604,7 +603,9 @@ def calculate_hillslope_properties_updated(hillslopes,dem,res,latitude,
   count += 1
   
  #Finalize the properties
- for var in properties:properties[var] = np.array(properties[var])
+ for var in properties:
+  #if var in ['position_array','width_array','d2c_array']:continue
+  properties[var] = np.array(properties[var])
 
  #return properties
  #Write out output
@@ -1068,6 +1069,7 @@ def calculate_hru_properties_updated(hillslopes,tiles,res,hrus,depth2channel,slo
    hru_properties['hillslope_frac'][m1] = frac[it]*f
   #Set the overall fraction
   hru_properties['frac'][m] = hp['frac'][ih]*hru_properties['hillslope_frac'][m]
+  #print ih,tids.size
 
  #return hru_properties
  #Write out output
@@ -1200,7 +1202,12 @@ def cluster_hillslopes_updated(hillslopes,covariates,hp_in,nclusters,ws,dh,max_n
   w = np.array(w)'''
   mc = np.where(clusters == cluster)[0]
   d = hp_in['d2c_array'][mc]
-  w = 1 + hp_in['position_array'][mc]*hp_in['width_slope'][mc]
+  #print hp_in['position_array'][mc].shape
+  #print hp_in['width_slope'][mc].shape
+  if len(hp_in['position_array'][mc].shape) > 1:
+   w = 1 + hp_in['position_array'][mc,:]*hp_in['width_slope'][mc][:,np.newaxis]
+  else:
+   w = 1 + hp_in['position_array'][mc]*hp_in['width_slope'][mc]
   p = hp_in['position_array'][mc]
   p = np.concatenate(p)
   d = np.concatenate(d)
@@ -1235,6 +1242,10 @@ def cluster_hillslopes_updated(hillslopes,covariates,hp_in,nclusters,ws,dh,max_n
  nbins[nbins == 0] = 1
  nbins[nbins > max_ntiles] = max_ntiles
  hp_out['nbins'] = nbins
+
+ #Set some constraints
+ m = hp_out['length'] > 10000
+ hp_out['length'][m] = 10000
 
  return (hillslopes_clusters,hp_out)
 
