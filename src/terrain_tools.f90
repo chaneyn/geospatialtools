@@ -1146,6 +1146,7 @@ subroutine delineate_hillslopes_catchment(channels,area,fdir,mask,hillslopes,nx,
  do ipos=ipos_old,npos
   inew = i+positions(ipos,1)
   jnew = j+positions(ipos,2)
+  if ((inew.lt.1).or.(jnew.lt.1).or.(inew.gt.nx).or.(jnew.gt.ny))cycle
   if ((fdir(inew,jnew,1) .eq. i) .and. (fdir(inew,jnew,2) .eq. j))then
    !If it is a channel then move upstream
    if (channels(inew,jnew) .gt. 0)then
