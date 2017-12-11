@@ -1218,13 +1218,17 @@ def cluster_hillslopes_updated(hillslopes,covariates,hp_in,nclusters,ws,dh,max_n
   #Fit curve to d2c
   #fr, pcov = scipy.optimize.curve_fit(frelief,p,d)#,bounds=([0.0,-1000],[10**4,1000]))
   #try:
-  fr, pcov = scipy.optimize.curve_fit(frelief,p,d,bounds=([1.0,1.0],[5.0,5.0]))
-  #except:
-  # fr = [1.0,1.0]
+  try:
+   fr, pcov = scipy.optimize.curve_fit(frelief,p,d,bounds=([1.0,1.0],[5.0,5.0]))
+  except:
+   fr = [1.0,1.0]
   hp_out['relief_p0'].append(fr[0])
   hp_out['relief_p1'].append(fr[1])
   #Fit line to width
-  fw, pcov = scipy.optimize.curve_fit(fwidth,p,w,bounds=([-0.99,],[99,]))
+  try:
+   fw, pcov = scipy.optimize.curve_fit(fwidth,p,w,bounds=([-0.99,],[99,]))
+  except:
+   fw = [1.0,]
   hp_out['width_p0'].append(fw[0])
   #plt.plot(p,d,'bo',alpha=0.05)
   #plt.plot(p,frelief(p,fr[0],fr[1]),'ro',alpha=0.05)
