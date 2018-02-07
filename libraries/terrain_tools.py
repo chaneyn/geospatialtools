@@ -341,7 +341,7 @@ def reduce_basin_number(basins,bp,nbasins_goal):
  return basins
 
 def calculate_hillslope_properties_updated(hillslopes,dem,res,latitude,
-    longitude,depth2channel,slope,aspect,tas,prec,cdir):
+    longitude,depth2channel,slope,aspect,tas,prec,cdir,uhrt,uhst,lt_uvt,ul_mask):
 
  #Convert aspect to cartesian coordinates
  x_aspect = np.cos(aspect)
@@ -349,10 +349,10 @@ def calculate_hillslope_properties_updated(hillslopes,dem,res,latitude,
 
  #Initialize properties dictionary
  vars = ['latitude','longitude','dem','aspect','tas','prec','slope',
-         #'width_intercept','slope_intercept','width_slope','slope_slope',
          'width_intercept','width_slope',
          'length','area','d2c_array','position_array','width_array',
-         'relief','x_aspect','y_aspect','hid','relief_a','relief_b']
+         'relief','x_aspect','y_aspect','hid','relief_a','relief_b',
+         'uhrt','uhst','lt_uvt','ul_mask']
  properties = {}
  for var in vars:properties[var] = []
 
@@ -573,7 +573,11 @@ def calculate_hillslope_properties_updated(hillslopes,dem,res,latitude,
          'prec':prec[imin:imax+1,jmin:jmax+1],
          'slope':slope[imin:imax+1,jmin:jmax+1],
          'x_aspect':x_aspect[imin:imax+1,jmin:jmax+1],
-         'y_aspect':y_aspect[imin:imax+1,jmin:jmax+1]}
+         'y_aspect':y_aspect[imin:imax+1,jmin:jmax+1],
+         'uhrt':uhrt[imin:imax+1,jmin:jmax+1],
+         'uhst':uhst[imin:imax+1,jmin:jmax+1],
+         'lt_uvt':lt_uvt[imin:imax+1,jmin:jmax+1],
+         'ul_mask':ul_mask[imin:imax+1,jmin:jmax+1]}
 
   #Add properties to dictionary
   for var in tmp:
@@ -861,19 +865,33 @@ def create_hillslope_tiles_updated(hillslopes,depth2channel,hillslopes_full,hp_i
  clusters = np.copy(hillslopes)
  uh = np.unique(hillslopes)
  uh = uh[uh != undef]
+ new_hand = np.copy(nrelief)
  for ih in uh:
   #Define the normalized hillslope relief that we want to use
-  nr = np.linspace(0,1,2*hp['nbins'][ih-1]+1)
+  #p0 = hp['relief_p0'][ih-1]
+  #p1 = hp['relief_p1'][ih-1]
+  #nr = np.linspace(0,1,2*hp['nbins'][ih-1]+1)
+  nr = np.linspace(0,1,2*hp['nbins'][ih-1]+1)[0::2]
+  #nrs = nr[0::2]
+  #nhand = []
+  #for i in xrange(nr.size-1):
+  # x = np.linspace(nr[i],nr[i+1],100)
+  # nhand.append(np.mean(frelief(x,p0,p1)))
+  nhand = hp['relief'][ih-1]*np.array(nr)#nhand)
   #Assign an id to each elevation tile
   mask = (hillslopes == ih) & m
+  new_hand[mask] = hp['relief'][ih-1]*new_hand[mask]
   nbins = hp['nbins'][ih-1]
   for ibin in xrange(nbins):
    if ibin == 0:
-    smask = mask & (nrelief <= nr[0::2][ibin+1])
+    #smask = mask & (nrelief <= nr[0::2][ibin+1])
+    smask = mask & (new_hand <= nhand[ibin+1])
    elif ibin == nbins-1:
-    smask = mask & (nrelief > nr[0::2][ibin])
+    #smask = mask & (nrelief > nr[0::2][ibin])
+    smask = mask & (new_hand > nhand[ibin])
    else:
-    smask = mask & (nrelief > nr[0::2][ibin]) & (nrelief <= nr[0::2][ibin+1])
+    #smask = mask & (nrelief > nr[0::2][ibin]) & (nrelief <= nr[0::2][ibin+1])
+    smask = mask & (new_hand > nhand[ibin]) & (new_hand <= nhand[ibin+1])
    clusters[smask] = ibin+1
 
  #Cleanup the tiles
@@ -881,7 +899,7 @@ def create_hillslope_tiles_updated(hillslopes,depth2channel,hillslopes_full,hp_i
  ttf.cleanup_hillslopes(clusters)
  clusters[clusters >= 0] = clusters[clusters >= 0] + 1
 
- return clusters
+ return (clusters,new_hand)
 
 def create_hrus(hillslopes,htiles,covariates,nclusters,flag,maxnc,cdir):
 
@@ -974,7 +992,7 @@ def calculate_hru_properties(hillslopes,tiles,channels,res,nhillslopes,hrus,dept
 
  return
 
-def calculate_hru_properties_updated(hillslopes,tiles,res,hrus,depth2channel,slope,hp,cdir):
+def calculate_hru_properties_updated(hillslopes,tiles,res,hrus,depth2channel,slope,hp,cdir,nhand):
 
  #Get the hillslope fractions
  fs = []
@@ -998,7 +1016,7 @@ def calculate_hru_properties_updated(hillslopes,tiles,res,hrus,depth2channel,slo
 
  #Gather some general hru information
  hru_properties = {}
- vars = ['hillslope_id','tile_id','hru','area','hillslope_slope']
+ vars = ['hillslope_id','tile_id','hru','area','hillslope_slope','hand_ecdf','hand_bedges']
  for var in vars:hru_properties[var] = []
  for hru in masks:
   iss = masks[hru][:,0]
@@ -1008,13 +1026,29 @@ def calculate_hru_properties_updated(hillslopes,tiles,res,hrus,depth2channel,slo
   hru_properties['hru'].append(int(hru))
   hru_properties['area'].append(np.float64(res**2*np.sum(iss.size)))
   hru_properties['hillslope_slope'].append(np.float64(np.mean(slope[iss,jss])))
+  #Assign ecdf of hand - mean(hand) per hru
+  #tmp = depth2channel[iss,jss]
+  tmp = nhand[iss,jss]
+  if np.sum(tmp != -9999) == 0:
+   tmp[tmp == -9999] = 0.0
+  else:
+   tmp[tmp == -9999] = np.mean(tmp[tmp != -9999])
+  #Compute the ecdf
+  nbins = 10
+  (hist,bin_edges) = np.histogram(tmp,bins=nbins)
+  ecdf = np.cumsum(hist).astype(np.float32)
+  ecdf = ecdf/ecdf[-1]
+  ecdf = np.append(np.zeros(1),ecdf)
+  hru_properties['hand_ecdf'].append(ecdf)
+  hru_properties['hand_bedges'].append(bin_edges)
  for var in hru_properties:
   hru_properties[var] = np.array(hru_properties[var])
  hru_properties['frac'] = np.zeros(hru_properties['area'].size)
  #hru_properties['frac'] = np.zeros(hru_properties['area']/np.sum(hru_properties['area'])
 
  #Add fill for the other properties
- vars = ['hillslope_length','hillslope_hand','hillslope_position','hillslope_width','hillslope_frac']
+ vars = ['hillslope_length','hillslope_hand','hillslope_position','hillslope_width','hillslope_frac',
+         'soil_depth','depth_to_bedrock']
  for var in vars:
   hru_properties[var] = np.zeros(hru_properties['area'].size).astype(np.float64)
 
@@ -1032,11 +1066,12 @@ def calculate_hru_properties_updated(hillslopes,tiles,res,hrus,depth2channel,slo
   p1 = hp['relief_p1'][ih]
   length = hp['length'][ih]*(frelief_inv(nrelief[1:],p0,p1) - frelief_inv(nrelief[0:-1],p0,p1))
   #Compute the relief for each segment
-  hand = []
-  for i in xrange(nrelief.size-1):
-   x = np.linspace(nrelief[i],nrelief[i+1],100)
-   hand.append(np.mean(frelief(x,p0,p1)))
-  hand = hp['relief'][ih]*np.array(hand)
+  #hand = []
+  #for i in xrange(nrelief.size-1):
+  # x = np.linspace(nrelief[i],nrelief[i+1],100)
+  # hand.append(np.mean(frelief(x,p0,p1)))
+  #hand = hp['relief'][ih]*np.array(hand)
+  hand = hp['relief'][ih]*(nrelief[0:-1]+nrelief[1:])/2
   #Compute the width for each segment
   pos = frelief_inv(nrelief,p0,p1)
   p0 = hp['width_p0'][ih]
@@ -1070,6 +1105,20 @@ def calculate_hru_properties_updated(hillslopes,tiles,res,hrus,depth2channel,slo
   #Set the overall fraction
   hru_properties['frac'][m] = hp['frac'][ih]*hru_properties['hillslope_frac'][m]
   #print ih,tids.size
+  #Determine if hillslope is in the lowlands or uplands (per pelletier 2016)
+  if hp['ul_mask'][ih] >= 1.5: #LOWLAND
+   soil_thickness = 2.0
+   sedimentary_thickness =  hp['lt_uvt'][ih] - soil_thickness
+   if sedimentary_thickness < 0:sedimentary_thickness = 0.0
+   soil_depth = soil_thickness*np.ones(tids.size)
+   depth_to_bedrock = (soil_thickness + sedimentary_thickness)*np.ones(tids.size)
+  elif hp['ul_mask'][ih] < 1.5: #UPLAND
+   soil_thickness = np.linspace(2.0,hp['uhst'][ih],tids.size)
+   regolith_thickness = np.linspace(hp['lt_uvt'][ih],hp['uhrt'][ih],tids.size)
+   soil_depth = soil_thickness
+   depth_to_bedrock = regolith_thickness#soil_thickness + regolith_thickness
+  hru_properties['soil_depth'][m] = soil_depth[idx]
+  hru_properties['depth_to_bedrock'][m] = depth_to_bedrock[idx]
 
  #return hru_properties
  #Write out output
@@ -1135,7 +1184,7 @@ def cluster_hillslopes(hillslopes,covariates,hp_in,nclusters,ws):
  
  return (hillslopes_clusters,nhillslopes,hp_out)
 
-def cluster_hillslopes_updated(hillslopes,covariates,hp_in,nclusters,ws,dh,max_nbands):
+def cluster_hillslopes_updated(hillslopes,covariates,hp_in,nclusters,ws,dh,max_nbands,min_nbands):
 
  #Add weights to covariates
  for var in covariates:
@@ -1242,8 +1291,9 @@ def cluster_hillslopes_updated(hillslopes,covariates,hp_in,nclusters,ws,dh,max_n
  #Define the number of elevation tiles per cluster
  tile_relief = dh#md['clustering']['tile_relief']
  max_ntiles = max_nbands#md['clustering']['max_ntiles']
+ min_ntiles = min_nbands#md['clustering']['max_ntiles']
  nbins = np.round(hp_out['relief']/tile_relief).astype(np.int)
- nbins[nbins == 0] = 1
+ nbins[nbins < min_ntiles] = min_ntiles
  nbins[nbins > max_ntiles] = max_ntiles
  hp_out['nbins'] = nbins
 

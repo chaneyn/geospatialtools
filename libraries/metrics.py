@@ -66,6 +66,12 @@ def R2(obs,model):
   rho = scipy.stats.pearsonr(model[idx],obs[idx])
   return rho[0]**2
 
+def R(obs,model):
+  #Use only non-nan values
+  idx = np.where((np.isnan(obs) == 0) & (np.isnan(model) == 0))
+  rho = scipy.stats.pearsonr(model[idx],obs[idx])
+  return rho[0]
+
 def nRMSE(obs,model):
   #Use only non-nan values
   idx = np.where((np.isnan(obs) == 0) & (np.isnan(model) == 0))
