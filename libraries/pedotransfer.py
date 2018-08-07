@@ -123,7 +123,7 @@ def Run_Tests():
  theta33 = np.array([10.,12.,18.,28.,31.,30.,27.,36.,38.,41.,36.,42.])/100
  theta1500 = np.array([5.,5.,8.,14.,11.,6.,17.,22.,22.,27.,25.,30.])/100
 
- print "Comparing ksat"
+ '''print "Comparing ksat"
  print ksat
  print Ksat_Saxton2006(clay,sand,om)
  print np.allclose(ksat,Ksat_Saxton2006(clay,sand,om),atol=5e-01)
@@ -140,6 +140,6 @@ def Run_Tests():
  print theta1500
  print Theta_1500_Saxton2006(clay,sand,om)
  print "Psisat"
- print 10*Psisat_Saxton2006(clay,sand,om)/100 #m
+ print 10*Psisat_Saxton2006(clay,sand,om)/100 #m'''
 
  return
