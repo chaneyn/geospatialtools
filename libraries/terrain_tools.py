@@ -73,7 +73,6 @@ def cluster_data(X,nc):
   #idx = np.arange(X.shape[0])[0:minsamples]
  else:
   idx = np.arange(X.shape[0])
- #print np.mean(X[idx,:])
  
  #The number of clusters must be equal or smaller than the number of samples
  if idx.size < nc:nc = idx.size
@@ -85,7 +84,6 @@ def cluster_data(X,nc):
   model = sklearn.cluster.KMeans(n_clusters=nc,random_state=35799)
   #model = KMeans(nc)
   #model.compute(X)
-  #print model.assignments_
   #exit()
   #model.fit(X[idx,:])
   p = model.fit_predict(X)
@@ -118,11 +116,9 @@ def compute_performance_metrics(Xd,data):
    tmp[m] = np.mean(obs[m])
    #ms.append(metrics.RMSE(obs[m],tmp[m]))
    #ms.append(np.abs(obs[m]-tmp[m])))
-  #print var,tmp
   #maes.append(metrics.MAE(Xd[var]['d'],tmp))
   RMSE = metrics.RMSE(obs,tmp)
   vals.append(RMSE)
-  #print np.unique(tmp),np.unique(Xd[var]['d'])
   #vals.append(metrics.MAE(obs,tmp))
   #vals.append(np.max(ms))
   #print var,np.max(ms)
@@ -224,7 +220,7 @@ def compute_basin_delineation_nbasins(dem,mask,res,nbasins):
  channels = ttf.calculate_channels(area,channel_threshold,max_threshold,fdir)
  min_basins = ttf.delineate_basins(channels,mask,fdir)
  min_nbasins = np.unique(min_basins)[1::].size
- print min_nbasins
+ #print min_nbasins
  #Min iteration
  channels = ttf.calculate_channels(area,channel_threshold,min_threshold,fdir)
  max_basins = ttf.delineate_basins(channels,mask,fdir)
@@ -236,7 +232,7 @@ def compute_basin_delineation_nbasins(dem,mask,res,nbasins):
   channels = ttf.calculate_channels(area,channel_threshold,np.exp(c),fdir)
   basins = ttf.delineate_basins(channels,mask,fdir)
   c_nbasins = np.unique(basins)[1::].size
-  print min_nbasins,c_nbasins,max_nbasins
+  #print min_nbasins,c_nbasins,max_nbasins
   #Determine if we have found our solution
   if c_nbasins == nbasins:
    return basins
@@ -252,7 +248,7 @@ def compute_basin_delineation_nbasins(dem,mask,res,nbasins):
    min_basins = ttf.delineate_basins(channels,mask,fdir)
    min_nbasins = np.unique(min_basins)[1::].size
 
- print "Did not converge. Returning the best"
+ #print "Did not converge. Returning the best"
  return basins
 
 def define_hrus(basins,dem,channels):

@@ -29,7 +29,7 @@ subroutines = 'calculate_d8_acc \
 
 #Create library
 cmd = 'f2py -c only: %s : *.o -m terrain_tools_fortran terrain_tools.f90 -lgomp --fcompiler=gnu95 --f90flags="-Wall -pedantic -fopenmp -O3"' % subroutines
-print cmd
+#print cmd
 os.system(cmd)
 
 #Move to the previos directory
@@ -43,7 +43,7 @@ subroutines = 'time_average'
 
 #Create library
 cmd = 'f2py -c only: %s : -m upscaling_tools_fortran upscaling_tools.f90 -lgomp --fcompiler=gnu95 --f90flags="-w -fopenmp -O3"' % subroutines
-print cmd
+#print cmd
 os.system(cmd)
 
 #Move to the previos directory
