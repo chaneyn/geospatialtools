@@ -12,9 +12,11 @@ os.chdir(cwd)
 #requirements = requirements_file.read().splitlines()
 setup(name='geospatialtools',
       version='1.0',
-      package_dir={'geospatialtools': 'libraries'},
-      packages=['geospatialtools'],
-      package_data={'geospatialtools': ['*.py','*.so']}
+      #package_dir={'geospatialtools': 'libraries'},
+      packages = find_packages(),
+      #packages=['geospatialtools'],
+      #include_package_data=True,
+      package_data={'geospatialtools': ['*.so','*.py']}
       )
 
 '''setup(

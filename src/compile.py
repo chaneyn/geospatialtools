@@ -31,9 +31,9 @@ subroutines = 'calculate_d8_acc \
 cmd = 'f2py -c only: %s : *.o -m terrain_tools_fortran terrain_tools.f90 -lgomp --fcompiler=gnu95 --f90flags="-Wall -pedantic -fopenmp -O3"' % subroutines
 #print cmd
 os.system(cmd)
-exit()
 
 #Move to the previos directory
+os.system('mv terrain_tools_fortran.*.so terrain_tools_fortran.so')
 os.system('mv terrain_tools_fortran.so ../libraries/.')
 
 #Upscaling tools
@@ -48,4 +48,5 @@ cmd = 'f2py -c only: %s : -m upscaling_tools_fortran upscaling_tools.f90 -lgomp 
 os.system(cmd)
 
 #Move to the previos directory
+os.system('mv upscaling_tools_fortran.*.so upscaling_tools_fortran.so')
 os.system('mv upscaling_tools_fortran.so ../libraries/.')
