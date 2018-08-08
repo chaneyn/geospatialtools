@@ -1,23 +1,23 @@
 import os
 from setuptools import setup, find_packages
 
-base_dir = os.path.dirname(os.path.abspath(__file__))
-requirements_file = open(os.path.join(base_dir, 'requirements.txt'))
-requirements = requirements_file.read().splitlines()
-#setup(name='geospatialtools',
-#      version='1.0',
-#      package_dir={'geospatialtools': 'libraries'},
-#      packages=['geospatialtools'],
-#      package_data={'geospatialtools': ['*.py','*.so']}
-#      )
-
 #First compile the code
 cwd = os.getcwd()
 os.chdir('src')
 os.system('python compile.py')
 os.chdir(cwd)
 
-setup(
+#base_dir = os.path.dirname(os.path.abspath(__file__))
+#requirements_file = open(os.path.join(base_dir, 'requirements.txt'))
+#requirements = requirements_file.read().splitlines()
+setup(name='geospatialtools',
+      version='1.0',
+      package_dir={'geospatialtools': 'libraries'},
+      packages=['geospatialtools'],
+      package_data={'geospatialtools': ['*.py','*.so']}
+      )
+
+'''setup(
     name='geospatialtools',
     version='0.1',
     #cmdclass=versioneer.get_cmdclass(),
@@ -42,4 +42,4 @@ setup(
         'License :: OSI Approved :: BSD License',
         'Programming Language :: Python',
     ]
-)
+)'''

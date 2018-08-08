@@ -31,6 +31,7 @@ subroutines = 'calculate_d8_acc \
 cmd = 'f2py -c only: %s : *.o -m terrain_tools_fortran terrain_tools.f90 -lgomp --fcompiler=gnu95 --f90flags="-Wall -pedantic -fopenmp -O3"' % subroutines
 #print cmd
 os.system(cmd)
+exit()
 
 #Move to the previos directory
 os.system('mv terrain_tools_fortran.so ../libraries/.')
