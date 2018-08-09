@@ -3,3 +3,5 @@ libraries/*.pyc
 libraries/*.so
 src/terrain_tools.so.dSYM/*
 src/terrain_tools_fortran.so.dSYM/*
+src/*.mod
+src/*.o

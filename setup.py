@@ -1,47 +1,25 @@
-import os
-from setuptools import setup, find_packages
+def configuration(parent_package='', top_path=None):
 
-#First compile the code
-cwd = os.getcwd()
-os.chdir('src')
-os.system('python compile.py')
-os.chdir(cwd)
+    from numpy.distutils.misc_util import Configuration
+    from numpy.distutils.core import Extension
 
-#base_dir = os.path.dirname(os.path.abspath(__file__))
-#requirements_file = open(os.path.join(base_dir, 'requirements.txt'))
-#requirements = requirements_file.read().splitlines()
-setup(name='geospatialtools',
-      version='1.0',
-      #package_dir={'geospatialtools': 'libraries'},
-      packages = find_packages(),
-      #packages=['geospatialtools'],
-      #include_package_data=True,
-      package_data={'geospatialtools': ['*.so','*.py']}
-      )
+    config = Configuration('geospatialtools', parent_package, top_path)
 
-'''setup(
-    name='geospatialtools',
-    version='0.1',
-    #cmdclass=versioneer.get_cmdclass(),
-    author='Nathaniel Chaney',
-    author_email='chaneyna@gmail.com',
-    packages=find_packages(),
-    install_requires=requirements,
-    ##package_dir={'geospatialtools': 'libraries'},
-    #packages=['geospatialtools'],
-    #package_data={'geospatialtools': ['*.py','*.so']}
-    #entry_points={
-    #    'console_scripts': [
-    #        'anaconda = binstar_client.scripts.cli:main',
-    #        'binstar = binstar_client.scripts.cli:main',
-    #        'conda-server = binstar_client.scripts.cli:main'
-    #    ]
-    #},
-    #license='BSD License',
-    classifiers=[
-        'Development Status :: 5 - Production/Stable',
-        'Environment :: Console',
-        'License :: OSI Approved :: BSD License',
-        'Programming Language :: Python',
-    ]
-)'''
+    config.add_extension('terrain_tools_fortran',
+                         sources=['src/planchon_2001.f90','src/terrain_tools.f90'],
+                         extra_f90_compile_args = ['-fPIC','-lgomp','-Wall','-pedantic','-fopenmp','-O3']
+                        ),
+
+    config.add_extension('upscaling_tools_fortran',
+                         sources=['src/upscaling_tools.f90'],
+                         extra_f90_compile_args = ['-fPIC','-lgomp','-Wall','-pedantic','-fopenmp','-O3']
+                        ),
+
+    config.add_subpackage('',subpackage_path='libraries')
+                        
+
+    return config
+
+if __name__ == '__main__':
+    from numpy.distutils.core import setup
+    setup(**configuration(top_path='').todict())

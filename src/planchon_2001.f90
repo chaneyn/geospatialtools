@@ -1,8 +1,8 @@
 module planchon_2001
 
 implicit none
-private
-public :: remove_pits
+!private
+!public :: remove_pits,next_cell
 integer :: npos = 8
 integer :: pos,k,l,positions(8,2)
 real :: undef = -9999

@@ -1,14 +1,13 @@
 #Import all the functions from the fortran library
 import numpy as np
 import terrain_tools_fortran as ttf
-import metrics 
+from . import metrics 
 import sklearn.cluster
 import sklearn.linear_model
 import scipy.stats
 import copy
 import time
-import cPickle as pickle
-#import matplotlib.pyplot as plt
+import pickle
 
 def calculate_distance(lat0,lat1,lon0,lon1):
 
