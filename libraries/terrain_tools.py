@@ -1,6 +1,6 @@
-#Import all the functions from the fortran library
 import numpy as np
-import terrain_tools_fortran as ttf
+#import terrain_tools_fortran as ttf
+from . import terrain_tools_fortran as ttf
 from . import metrics 
 import sklearn.cluster
 import sklearn.linear_model
@@ -334,6 +334,60 @@ def reduce_basin_number(basins,bp,nbasins_goal):
  basins[basins <= 0] = -9999
 
  return basins
+
+def calculate_basin_properties_updated(basins,res,cvs,vars):
+
+ #Initialize properties dictionary
+ #vars = ['latitude','longitude','dem','bid']
+ properties = {}
+ for var in vars:properties[var] = []
+ properties['bid'] = []
+
+ #Assemble masks
+ masks = {}
+ for i in range(basins.shape[0]):
+  for j in range(basins.shape[1]):
+   h = basins[i,j]
+   if h == -9999:continue
+   if h not in masks:masks[h] = []
+   masks[h].append([i,j])
+ for id in masks.keys():
+  masks[id] = np.array(masks[id])
+
+ #Iterate through each hillslope to calculate properties
+ count = 0
+ for uh in masks.keys():
+  #tic = time.time()
+  #imin = np.min(masks[uh][:,0])
+  #imax = np.max(masks[uh][:,0])
+  #jmin = np.min(masks[uh][:,1])
+  #jmax = np.max(masks[uh][:,1])
+
+  tmp = {}
+  for var in vars:
+   #print(masks[uh])
+   tmp[var] = cvs[var][masks[uh][:,0],masks[uh][:,1]]#imin:imax+1,jmin:jmax+1]
+  #tmp = {'latitude':latitude[imin:imax+1,jmin:jmax+1],
+  #       'longitude':longitude[imin:imax+1,jmin:jmax+1],
+  #       'dem':dem[imin:imax+1,jmin:jmax+1]}
+  #tmask = masks[uh][[imin:imax+1,jmin:jmax+1]
+
+  #Add properties to dictionary
+  for var in tmp:
+   '''#print(uh,var,np.unique(tmp))
+   if np.sum(tmp[var] != -9999) > 0:
+    properties[var].append(np.mean(tmp[var][tmp[var] != -9999]))
+   else:
+    properties[var].append(-9999)'''
+   properties[var].append(np.mean(tmp[var]))
+  properties['bid'].append(uh)
+  count += 1
+  
+ #Finalize the properties
+ for var in properties:
+  properties[var] = np.array(properties[var])
+
+ return properties
 
 def calculate_hillslope_properties_updated(hillslopes,dem,res,latitude,
     longitude,depth2channel,slope,aspect,tas,prec,cdir,uhrt,uhst,lt_uvt,ul_mask):
@@ -896,6 +950,115 @@ def create_hillslope_tiles_updated(hillslopes,depth2channel,hillslopes_full,hp_i
 
  return (clusters,new_hand)
 
+def create_basin_tiles(basin_clusters,hand,basins,dh):
+
+ new_hand = np.copy(hand)
+ #Iterate per cluster
+ ubcs = np.unique(basin_clusters)
+ ubcs = ubcs[ubcs!=-9999]
+ tiles = np.copy(hand).astype(np.int32)
+ tiles[:] = -9999
+ tiles_position = np.copy(hand).astype(np.int32)
+ tiles_position[:] = -9999
+ count = 0
+ for ubc in ubcs:
+  m = basin_clusters == ubc
+  data = hand[m]
+  #curate
+  data[data == -9999] = np.max(data[data != -9999])
+  hand[m & (hand == -9999)] = np.max(hand[m & (hand != -9999)])
+  #compute number of bins
+  nbins = int(np.ceil(np.max(data)/dh))
+  #Compute the edges
+  pedges = 5
+  bin_edges = np.linspace(0.0,np.max(data)**(1.0/float(pedges)),nbins+1)**pedges
+  #compute the binning
+  #(hist,bin_edges) = np.histogram(data,bins='fd')#bins=nbins)
+  #update edges
+  #bin_edges[0] = 0.0
+  #bin_edges[-1] = np.max(data)
+  #Assign the tiles
+  count2 = 0
+  for i in range(bin_edges.size-1):
+   if i == 0:m2 = m & (hand >= bin_edges[i]) & (hand <= bin_edges[i+1])
+   else:m2 = m & (hand > bin_edges[i]) & (hand <= bin_edges[i+1])
+   #print(i,np.sum(m2))
+   if np.sum(m2) > 0:
+    tiles[m2] = count
+    tiles_position[m2] = count2
+    new_hand[m2] = np.mean(hand[m2])
+    count += 1
+    count2 += 1
+
+ return (tiles,new_hand,tiles_position)
+
+def create_hrus_hydroblocks(hillslopes,htiles,covariates,nclusters):
+
+ #Compute optimal number of clusters flag
+ flag = False
+
+ #Curate the covariates
+ for var in covariates: 
+  val = np.mean(covariates[var]['d'][covariates[var]['d'] != -9999])
+  covariates[var]['d'][covariates[var]['d'] == -9999] = val
+ import sklearn.cluster
+ hrus = np.copy(hillslopes)
+ hrus[:] = -9999
+ #Iterate through each gru and tile and compute hrus
+ uhs = np.unique(hillslopes)
+ uhs = uhs[uhs != -9999]
+ maxc = 1
+ for uh in uhs:
+  mh = hillslopes == uh
+  uts = np.unique(htiles[mh])
+  for ut in uts:
+   mt = mh & (htiles == ut)
+   #Compute the parameters for the clustering algorithm
+   ccp = {}
+   for var in covariates:
+    tmp = covariates[var]['d'][mt]
+    ccp[var] = {'d':tmp,'t':covariates[var]['t'],
+                'min':covariates[var]['min'],
+                'max':covariates[var]['max']}
+   if flag == True:
+    (nc,ws) = compute_cluster_parameters(ccp,maxnc)
+   else:
+    nc = nclusters
+    ws = np.ones(len(ccp.keys()))
+   #print 'hillslope: %d, tile: %d, nc: %d' % (uh,ut,nc)
+   #Add weights to covariates
+   for var in covariates:
+    covariates[var]['w'] = ws[list(ccp).index(var)]
+   #prepare the covariate data
+   X = []
+   for var in covariates:
+    #Normalize and apply weight
+    tmp = covariates[var]['w']*normalize_variable(covariates[var]['d'][mt],covariates[var]['min'],covariates[var]['max'])
+    #tmp[(np.isnan(tmp) == 1) | (np.isinf(tmp) == 1)] = 0.0
+    #Convert to percentiles
+    #argsort = np.argsort(tmp)
+    #tmp[argsort] = np.linspace(0,1,tmp.size)
+    X.append(tmp)
+   #cluster the data
+   X = np.array(X).T
+   clusters = cluster_data(X,nc)+maxc
+   #state = 35799
+   #if (X.shape[0] >= nc):
+   # model = sklearn.cluster.KMeans(n_clusters=nc,random_state=state)
+   # clusters = model.fit_predict(X)+maxc
+   #else:
+    #clusters = np.zeros(X.shape[0])+maxc
+   hrus[mt] = clusters
+   maxc = np.max(clusters)+1
+
+ #Cleanup hrus
+ ttf.cleanup_hillslopes(hrus)
+ hrus[hrus >= 0] = hrus[hrus >= 0] + 1
+
+ return hrus
+ 
+ return
+
 def create_hrus(hillslopes,htiles,covariates,nclusters,flag,maxnc,cdir):
 
  #Curate the covariates
@@ -1297,6 +1460,38 @@ def cluster_hillslopes_updated(hillslopes,covariates,hp_in,nclusters,ws,dh,max_n
  hp_out['length'][m] = 10000
 
  return (hillslopes_clusters,hp_out)
+
+def cluster_basins_updated(basins,covariates,hp_in,nclusters):
+
+ X = []
+ for var in covariates:
+  otmp = np.copy(covariates[var]['d'])
+  otmp[(np.isnan(otmp) == 1) | (np.isinf(otmp) == 1)] = 0.0
+  tmp = np.copy(otmp)
+  #Normalize and apply weight
+  tmp = normalize_variable(tmp,covariates[var]['min'],covariates[var]['max'])
+  X.append(tmp)
+ X = np.array(X).T
+ clusters = cluster_data(X,nclusters)+1
+ #Create the mapping
+ mapping = np.zeros(np.max(hp_in['bid'])+1)
+ mapping[:] = -9999
+ for i in range(hp_in['bid'].size):
+  #print(i,hp_in['bid'][i],clusters[i])
+  mapping[hp_in['bid'][i]] = clusters[i]
+ #print(mapping)
+ #print(hp_in['bid'])
+ #print(clusters)
+ #exit()
+ #Clean up the basins
+ #basins = np.array(basins,order='f').astype(np.int32)
+ #ttf.cleanup_hillslopes(basins)
+ #Assign the new ids to each hillslpe
+ basins_clusters = ttf.assign_clusters_to_hillslopes(basins,mapping)
+ #Determine the number of basins per cluster
+ uclusters = np.unique(clusters)
+
+ return (basins_clusters,)#hp_out)
 
 def curate_hru_properties(hru_properties,hp):
 

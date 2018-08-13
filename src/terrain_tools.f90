@@ -706,7 +706,7 @@ subroutine calculate_channels(area_in,threshold,basin_threshold,fdir,channels,nx
  integer,dimension(nx,ny) :: mask
  integer,dimension(2) :: placement
  integer,dimension(:,:),allocatable :: positions
- integer :: i,j,pos,cid,k,l,npos
+ integer :: i,j,pos,cid,k,l,npos,hcid
  logical :: bool
  real :: undef
  undef = -9999.0
@@ -736,9 +736,14 @@ subroutine calculate_channels(area_in,threshold,basin_threshold,fdir,channels,nx
  endwhere
 
  !Differentiate the channels by segments
- cid = 1
+ hcid = 0
  bool = .False.
  do while (bool .eqv. .False.)
+
+  !Set cid to hcid
+  hcid = hcid + 1
+  cid = hcid
+  !print*,hcid,cid
   
   !Determine if there are still are cells
   if (maxval(mask) .eq. 0) bool = .True.
@@ -760,7 +765,7 @@ subroutine calculate_channels(area_in,threshold,basin_threshold,fdir,channels,nx
 
   !Go upstream
   call channels_upstream(i,j,fdir,channels,positions,nx,ny,cid,npos,&
-                         mask,basin_threshold,area)
+                         mask,basin_threshold,area,hcid)
 
  enddo
 
@@ -832,7 +837,7 @@ subroutine calculate_channels_wocean(area_in,threshold,basin_threshold,fdir,mask
  integer,dimension(nx,ny) :: cmask
  integer,dimension(2) :: placement
  integer,dimension(:,:),allocatable :: positions
- integer :: i,j,pos,cid,k,l,npos,imin,imax,jmin,jmax
+ integer :: i,j,pos,cid,k,l,npos,imin,imax,jmin,jmax,hcid
  logical :: bool
  real :: undef
  undef = -9999.0
@@ -862,9 +867,14 @@ subroutine calculate_channels_wocean(area_in,threshold,basin_threshold,fdir,mask
  endwhere
 
  !Differentiate the channels by segments
- cid = 1
+ hcid = 0
  bool = .False.
  do while (bool .eqv. .False.)
+
+  !Set cid to hcid
+  !print*,hcid,cid
+  hcid = hcid + 1
+  cid = hcid
   
   !Determine if there are still are cells
   if (maxval(cmask) .eq. 0) bool = .True.
@@ -886,7 +896,7 @@ subroutine calculate_channels_wocean(area_in,threshold,basin_threshold,fdir,mask
 
   !Go upstream
   call channels_upstream(i,j,fdir,channels,positions,nx,ny,cid,npos,&
-                         cmask,basin_threshold,area)
+                         cmask,basin_threshold,area,hcid)
 
  enddo
 
@@ -919,13 +929,13 @@ subroutine calculate_channels_wocean(area_in,threshold,basin_threshold,fdir,mask
 end subroutine
 
 recursive subroutine channels_upstream(i,j,fdir,channels,positions,nx,ny,cid,npos,&
-                             mask,basin_threshold,area)
+                             mask,basin_threshold,area,hcid)
 
  implicit none
  integer,intent(in) :: npos,i,j,nx,ny
  integer,intent(in) :: positions(npos,2),fdir(nx,ny,2)
  real,intent(in) :: basin_threshold,area(nx,ny)
- integer,intent(inout) :: cid,channels(nx,ny),mask(nx,ny)
+ integer,intent(inout) :: cid,channels(nx,ny),mask(nx,ny),hcid
  integer :: inew,jnew,count,ipos,cid_org
  !Memorize the channel id
  cid_org = cid
@@ -957,7 +967,7 @@ recursive subroutine channels_upstream(i,j,fdir,channels,positions,nx,ny,cid,npo
      mask(inew,jnew) = 0
      channels(inew,jnew) = channels(i,j)
      call channels_upstream(inew,jnew,fdir,channels,positions,nx,ny,&
-                             cid,npos,mask,basin_threshold,area)
+                             cid,npos,mask,basin_threshold,area,hcid)
     endif
    endif
   enddo
@@ -970,16 +980,17 @@ recursive subroutine channels_upstream(i,j,fdir,channels,positions,nx,ny,cid,npo
    if ((fdir(inew,jnew,1) .eq. i) .and. (fdir(inew,jnew,2) .eq. j))then
     if (mask(inew,jnew) .eq. 1) then
      if (area(inew,jnew) .ge. basin_threshold)then
-      cid = cid + 1
+      hcid = hcid + 1
+      cid = hcid
       mask(inew,jnew) = 0
       channels(inew,jnew) = cid
       call channels_upstream(inew,jnew,fdir,channels,positions,nx,ny,&
-                             cid,npos,mask,basin_threshold,area)
+                             cid,npos,mask,basin_threshold,area,hcid)
      else
       mask(inew,jnew) = 0
       channels(inew,jnew) = cid_org
       call channels_upstream(inew,jnew,fdir,channels,positions,nx,ny,&
-                             cid_org,npos,mask,basin_threshold,area)
+                             cid_org,npos,mask,basin_threshold,area,hcid)
      endif
     endif
    endif

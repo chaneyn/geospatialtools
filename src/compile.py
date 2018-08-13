@@ -34,8 +34,9 @@ cmd = 'f2py -c only: %s : *.o -m terrain_tools_fortran terrain_tools.f90 -lgomp 
 os.system(cmd)
 
 #Move to the previos directory
-os.system('mv terrain_tools_fortran.*.so terrain_tools_fortran.so')
-os.system('mv terrain_tools_fortran.so ../libraries/.')
+os.system('mv terrain_tools_fortran.*.so terrain_tools_fortran_v2.so')
+#os.system('mv terrain_tools_fortran_v2.so ../libraries/.')
+exit()
 
 #Upscaling tools
 #os.system('rm -rf terrain_tools.pyf')
