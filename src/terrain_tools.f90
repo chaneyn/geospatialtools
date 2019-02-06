@@ -1505,3 +1505,114 @@ subroutine assign_clusters_to_hillslopes(hillslopes_org,clusters,hillslopes_new,
  enddo
 
 end subroutine
+
+subroutine find_polygon(din,dout,i,j,cid,pid,nx,ny)
+
+ implicit none
+ integer,intent(in) :: i,j,nx,ny
+ real,intent(in) :: cid,pid
+ real,intent(inout) :: din(nx,ny),dout(nx,ny)
+
+ if(din(i,j) .eq. -9999.0)return
+ if(din(i,j) .ne. cid)return
+ din(i,j) = -9999
+ dout(i,j) = pid
+ if (i > 1)call find_polygon(din,dout,i-1,j,cid,pid,nx,ny)
+ if (i < nx)call find_polygon(din,dout,i+1,j,cid,pid,nx,ny)
+ if (j > 1)call find_polygon(din,dout,i,j-1,cid,pid,nx,ny)
+ if (j < ny)call find_polygon(din,dout,i,j+1,cid,pid,nx,ny)
+
+end subroutine
+
+subroutine polygonize_raster(din,dout,nx,ny)
+
+ implicit none
+ integer,intent(in) :: nx,ny
+ real,intent(inout) :: din(nx,ny),dout(nx,ny)
+ real :: pid,cid
+ integer :: i,j
+ pid = -1
+ do i = 1,nx
+  do j = 1,ny
+   if(din(i,j) .ne. -9999)then
+    !Define cluster
+    cid = din(i,j)
+    !Define polygon id
+    pid = pid + 1
+    !Find it's polygon
+    call find_polygon(din,dout,i,j,cid,pid,nx,ny)
+   endif
+  enddo
+ enddo
+
+end subroutine
+
+subroutine compute_polygon_info(polygons,clusters,xs,ys,pcxy,pd2o,cd2o,nx,ny,np,nc)
+ 
+ implicit none
+ integer,intent(in) :: nx,ny,np,nc
+ real,intent(in) :: polygons(nx,ny),xs(nx,ny),ys(nx,ny),clusters(nx,ny)
+ real,intent(inout) :: pcxy(np,2),pd2o(nc,2),cd2o(nc,2)
+ real :: pcentroid(np,3)
+ integer :: i,j,ic
+ real :: pol_org,cls_org,pol_dst,cls_dst
+ ic = 1
+ pcentroid = 0.0
+ do i = 1,nx
+  do j = 1,ny
+   !Add to centroid count
+   if(polygons(i,j) .ne. -9999)then
+    pcentroid(int(polygons(i,j))+1,1) = pcentroid(int(polygons(i,j))+1,1) + 1
+    pcentroid(int(polygons(i,j))+1,2) = pcentroid(int(polygons(i,j))+1,2) + xs(i,j)
+    pcentroid(int(polygons(i,j))+1,3) = pcentroid(int(polygons(i,j))+1,3) + ys(i,j)
+   endif
+   !Figure out what polygon and cluster it talks to
+   pol_org = polygons(i,j)
+   cls_org = clusters(i,j)
+   if (pol_org .eq. -9999)cycle
+   if ((i > 1) .and. (polygons(i-1,j) .ne. -9999))then
+    pol_dst = polygons(i-1,j)
+    cls_dst = clusters(i-1,j)
+    pd2o(ic,1) = pol_org
+    pd2o(ic,2) = pol_dst
+    cd2o(ic,1) = cls_org
+    cd2o(ic,2) = cls_dst
+    ic = ic + 1
+   endif
+   if ((i < nx) .and. (polygons(i+1,j) .ne. -9999))then
+    pol_dst = polygons(i+1,j)
+    cls_dst = clusters(i+1,j)
+    pd2o(ic,1) = pol_org
+    pd2o(ic,2) = pol_dst
+    cd2o(ic,1) = cls_org
+    cd2o(ic,2) = cls_dst
+    ic = ic + 1
+   endif
+   if ((j > 1) .and. (polygons(i,j-1) .ne. -9999))then
+    pol_dst = polygons(i,j-1)
+    cls_dst = clusters(i,j-1)
+    pd2o(ic,1) = pol_org
+    pd2o(ic,2) = pol_dst
+    cd2o(ic,1) = cls_org
+    cd2o(ic,2) = cls_dst
+    ic = ic + 1
+   endif
+   if ((j < ny) .and. (polygons(i,j+1) .ne. -9999))then
+    pol_dst = polygons(i,j+1)
+    cls_dst = clusters(i,j+1)
+    pd2o(ic,1) = pol_org
+    pd2o(ic,2) = pol_dst
+    cd2o(ic,1) = cls_org
+    cd2o(ic,2) = cls_dst
+    ic = ic + 1
+   endif
+  enddo
+ enddo
+
+ !Finalize the info
+ do i = 1,np
+  pcxy(i,1) = pcentroid(i,2)/pcentroid(i,1)
+  pcxy(i,2) = pcentroid(i,3)/pcentroid(i,1)
+ enddo
+
+end subroutine

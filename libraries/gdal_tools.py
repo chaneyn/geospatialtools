@@ -23,9 +23,9 @@ def extract_point_data(file,lats,lons,undef=-9999.0):
 
  #Extract data
  values = []
- for i in xrange(ilons.size):
-  ilon = ilons[i]
-  ilat = ilats[i]
+ for i in range(ilons.size):
+  ilon = int(ilons[i])
+  ilat = int(ilats[i])
   if ((ilon < 0) | (ilon >= nx)) | ((ilat < 0) | (ilat >= ny)):
    values.append(undef)
   else:

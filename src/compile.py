@@ -26,6 +26,8 @@ subroutines = 'calculate_d8_acc \
               calculate_slope_and_aspect \
               remove_pits \
               remove_pits_planchon \
+              polygonize_raster \
+              compute_polygon_info \
               gap_fill_hrus'
 
 #Create library
@@ -36,7 +38,6 @@ os.system(cmd)
 #Move to the previos directory
 os.system('mv terrain_tools_fortran.*.so terrain_tools_fortran_v2.so')
 #os.system('mv terrain_tools_fortran_v2.so ../libraries/.')
-exit()
 
 #Upscaling tools
 #os.system('rm -rf terrain_tools.pyf')

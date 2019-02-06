@@ -5,6 +5,7 @@ from . import metrics
 import sklearn.cluster
 import sklearn.linear_model
 import scipy.stats
+import scipy.sparse
 import copy
 import time
 import pickle
@@ -961,6 +962,32 @@ def create_basin_tiles(basin_clusters,hand,basins,dh):
  tiles_position = np.copy(hand).astype(np.int32)
  tiles_position[:] = -9999
  count = 0
+ 
+ #Normalize basins and compute maximum relief
+ #0.Assemble db of max relief
+ db = {}
+ for i in range(basins.shape[0]):
+  for j in range(basins.shape[1]):
+   if basins[i,j] == -9999:continue
+   b = basins[i,j]
+   if b not in db:db[b] = 0.0
+   if hand[i,j] > db[b]:db[b] = hand[i,j]
+ #1.Normalize each basin
+ maxhand = np.copy(hand)
+ for i in range(basins.shape[0]):
+  for j in range(basins.shape[1]):
+   if basins[i,j] == -9999:continue
+   b = basins[i,j]
+   hand[i,j] = hand[i,j]/db[b]
+   maxhand[i,j] = db[b]
+ #Check for nans
+ hand[np.isnan(hand) == 1] = 0.0
+ #2.Compute basin cluster average max hand
+ for ubc in ubcs:
+  m = basin_clusters == ubc
+  val = np.mean(maxhand[m]) 
+  hand[m] = val*hand[m]
+
  for ubc in ubcs:
   m = basin_clusters == ubc
   data = hand[m]
@@ -970,7 +997,7 @@ def create_basin_tiles(basin_clusters,hand,basins,dh):
   #compute number of bins
   nbins = int(np.ceil(np.max(data)/dh))
   #Compute the edges
-  pedges = 5
+  pedges = 1#5
   bin_edges = np.linspace(0.0,np.max(data)**(1.0/float(pedges)),nbins+1)**pedges
   #compute the binning
   #(hist,bin_edges) = np.histogram(data,bins='fd')#bins=nbins)
@@ -1550,3 +1577,55 @@ def curate_hru_properties(hru_properties,hp):
 
  return hru_properties
 
+def polygonize_raster(data):
+
+ din = np.copy(data,order='F')
+ dout = np.copy(data,order='F')
+ dout[:] = -9999
+ ttf.polygonize_raster(din,dout)
+
+ return dout
+
+def compute_polygon_info(polygons,clusters,res):
+
+ #Construct x,y using resolution 
+ x = np.linspace(res/2,polygons.shape[0]*res - res/2,polygons.shape[0])
+ y = np.linspace(res/2,polygons.shape[1]*res - res/2,polygons.shape[1])
+ (xs,ys) = np.meshgrid(y,x)
+ xs = np.copy(xs,order='F')
+ ys = np.copy(ys,order='F')
+
+ #Assemble i/o arrays
+ pcxy = np.zeros((np.int(np.max(polygons)) + 1,2),order='F').astype(np.float32)
+ pd2o = np.zeros((4*xs.size,2),order='F').astype(np.float32)
+ cd2o = np.zeros((4*xs.size,2),order='F').astype(np.float32)
+ pd2o[:] = -9999
+ cd2o[:] = -9999
+
+ #Compute properties
+ ttf.compute_polygon_info(polygons,clusters,xs,ys,pcxy,pd2o,cd2o)
+ pd2o = pd2o[pd2o[:,0]!=-9999,:]
+ cd2o = cd2o[cd2o[:,0]!=-9999,:]
+ pmatrix = scipy.sparse.coo_matrix((np.ones(pd2o.shape[0]),(pd2o[:,0],pd2o[:,1])),shape=(np.int(np.max(polygons)) + 1,np.int(np.max(polygons)) + 1),dtype=np.float32)
+ pmatrix = pmatrix.tocsr()
+
+ #Compute length between centroids
+ tmp = scipy.sparse.find(pmatrix)
+ dist = ((pcxy[tmp[0],0] - pcxy[tmp[1],0])**2 + (pcxy[tmp[0],1] - pcxy[tmp[1],1])**2)**0.5
+
+ #Assemble list of polygons per cluster
+ ucls = np.unique(clusters)
+ ucls = ucls[ucls != -9999]
+ db = {}
+ for cl in ucls:
+  db[cl] = np.unique(polygons[clusters == cl])
+
+ #Compute average length per cluster
+ #for cl in db:
+ # print(cl,np.mean(
+
+
+ #Create database
+ db = {'centroid':pcxy,}
+
+ return db
