@@ -394,8 +394,8 @@ def calculate_hillslope_properties_updated(hillslopes,dem,res,latitude,
     longitude,depth2channel,slope,aspect,tas,prec,cdir,uhrt,uhst,lt_uvt,ul_mask):
 
  #Convert aspect to cartesian coordinates
- x_aspect = np.cos(aspect)
- y_aspect = np.sin(aspect)
+ x_aspect = np.sin(aspect)
+ y_aspect = np.cos(aspect)
 
  #Initialize properties dictionary
  vars = ['latitude','longitude','dem','aspect','tas','prec','slope',

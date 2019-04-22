@@ -98,6 +98,19 @@ class raster_data:
   self.ny = rows
   self.projection = dataset.GetProjection()
   self.nodata = band.GetNoDataValue()
+  #Calculate the angle to due north
+  #0.Determine the center lat/lon
+  x = (self.minx + self.maxx)/2
+  y = (self.miny + self.maxy)/2
+  source = srs
+  target = osgeo.osr.SpatialReference()
+  target.ImportFromEPSG(4326)
+  transform = osgeo.osr.CoordinateTransformation(source, target)
+  center = transform.TransformPoint(x,y)
+  #1.Determine the boundary lat/lon
+  x = (self.minx + self.maxx)/2
+  bound = transform.TransformPoint(x,self.maxy)
+  #2.Use if need to correct aspect
 
   return
 
