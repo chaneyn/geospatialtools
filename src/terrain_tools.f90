@@ -824,6 +824,196 @@ subroutine gap_fill_hrus(hrus_in,channels,hrus_out,nx,ny)
 
 end subroutine gap_fill_hrus
  
+subroutine calculate_channels_wocean_wprop(area_in,threshold,basin_threshold,fdir,mask,channels,&
+                                           channels_wob,channel_topology,nx,ny)
+
+ implicit none
+ integer,intent(in) :: nx,ny
+ real,intent(in) :: threshold,basin_threshold
+ real,intent(in),dimension(nx,ny) :: area_in,mask
+ integer,intent(in),dimension(nx,ny,2) :: fdir
+ integer,intent(out),dimension(nx,ny) :: channels,channels_wob
+ integer,intent(out),dimension(nx*ny) :: channel_topology
+ real,dimension(nx,ny) :: area
+ integer,dimension(nx,ny) :: cmask
+ integer,dimension(2) :: placement
+ integer,dimension(:,:),allocatable :: positions
+ integer :: i,j,pos,cid,k,l,npos,imin,imax,jmin,jmax,hcid
+ logical :: bool
+ real :: undef
+ undef = -9999.0
+ npos = 8
+ allocate(positions(npos,2))
+ !Copy the area array
+ area = area_in
+ !Initialize channels 
+ channels = 0
+ !Initialize channel topology
+ channel_topology = -9999
+
+ !Construct positions array
+ pos = 0
+ do k=-1,1
+  do l=-1,1
+   if ((k == 0) .and. (l == 0)) cycle
+   pos = pos + 1
+   positions(pos,1) = k
+   positions(pos,2) = l
+  enddo
+ enddo
+
+ !Define the channels mask
+ where (area .gt. threshold)
+  cmask = 1
+ elsewhere
+  cmask = 0
+ endwhere
+
+ !Differentiate the channels by segments
+ hcid = 0
+ bool = .False.
+ do while (bool .eqv. .False.)
+
+  !Set cid to hcid
+  hcid = hcid + 1
+  cid = hcid
+  
+  !Determine if there are still are cells
+  if (maxval(cmask) .eq. 0) bool = .True.
+
+  !Maskout the area
+  where (cmask .eq. 0) 
+   area = 0
+  endwhere
+
+  !Find the highest accumulation area
+  placement = maxloc(area)
+  i = placement(1)
+  j = placement(2)
+  !Set the channel id
+  if ((cmask(i,j) .eq. 1) .and. (area(i,j) .ge. basin_threshold))then
+   channels(i,j) = cid
+   !Define outlet beyond catchment
+   channel_topology(cid) = -1
+  endif
+  cmask(i,j) = 0
+
+  !Go upstream
+  call channels_upstream_wprop(i,j,fdir,channels,positions,nx,ny,cid,npos,&
+                         cmask,basin_threshold,area,hcid,channel_topology)
+
+ enddo
+ 
+ !Memorize the preboundaries channels
+ channels_wob = channels
+
+ !Set the ocean/land, lake/land, and glacier/land boundaries as "channels"
+ cid = 999999!max(maxval(channels),1)
+ do i = 1,nx
+  do j = 1,ny
+   !Determine if this point is not "land"
+   if (mask(i,j) == 0.0) then
+    imin = i-1
+    imax = i+1
+    jmin = j-1
+    jmax = j+1
+    !Determine if any of the surrounding points are land
+    if (i .eq. 1)imin = 1
+    if (i .eq. nx)imax = nx
+    if (j .eq. 1)jmin = 1
+    if (j .eq. ny)jmax = ny
+    if (maxval(mask(imin:imax,jmin:jmax)) .gt. 0)channels(i,j) = cid
+    cid = cid + 1
+   endif
+  enddo
+ enddo
+
+ !Where the mask is 0 set area to undefined
+ where (((mask .eq. 0) .and. (channels .eq. 0)))! .or. (channels .eq. 0))
+  channels = int(undef)
+ endwhere
+
+ !Where the mask is 0 set area to undefined
+ where (((mask .eq. 0) .and. (channels_wob .eq. 0)))! .or. (channels .eq. 0))
+  channels_wob = int(undef)
+ endwhere
+
+end subroutine
+
+recursive subroutine channels_upstream_wprop(i,j,fdir,channels,positions,nx,ny,cid,npos,&
+                             mask,basin_threshold,area,hcid,channel_topology)
+
+ implicit none
+ integer,intent(in) :: npos,i,j,nx,ny
+ integer,intent(in) :: positions(npos,2),fdir(nx,ny,2)
+ real,intent(in) :: basin_threshold,area(nx,ny)
+ integer,intent(inout) :: cid,channels(nx,ny),mask(nx,ny),hcid,channel_topology(nx*ny)
+ integer :: inew,jnew,count,ipos,cid_org
+ !Memorize the channel id
+ cid_org = cid
+
+ !Determine how many cells flow into this cell 
+ count = 0
+ do ipos=1,npos
+  inew = i+positions(ipos,1)
+  jnew = j+positions(ipos,2)
+  if ((inew .lt. 1) .or. (jnew .lt. 1) .or. (inew .gt. nx) .or. (jnew .gt.ny))cycle
+  if ((fdir(inew,jnew,1) .eq. i) .and. (fdir(inew,jnew,2) .eq. j))then
+   if (mask(inew,jnew) .eq. 1) then
+    !Make sure we are above the threshold
+    if (area(inew,jnew) .ge. basin_threshold) then
+     count = count + 1
+    endif
+   endif
+  endif
+ enddo
+ !Decide the path to take
+ !1.Only one upstream cell
+ if (count .le. 1)then 
+  do ipos=1,npos
+   inew = i+positions(ipos,1)
+   jnew = j+positions(ipos,2)
+   if ((inew.lt.1).or.(jnew.lt.1).or.(inew.gt.nx).or.(jnew.gt.ny)) cycle
+   if ((fdir(inew,jnew,1) .eq. i) .and. (fdir(inew,jnew,2) .eq. j))then
+    if (mask(inew,jnew) .eq. 1) then
+     mask(inew,jnew) = 0
+     channels(inew,jnew) = channels(i,j)
+     call channels_upstream_wprop(inew,jnew,fdir,channels,positions,nx,ny,&
+                             cid,npos,mask,basin_threshold,area,hcid,&
+                             channel_topology)
+    endif
+   endif
+  enddo
+ !2.More than one upstream cell
+ elseif (count .gt. 1)then
+  do ipos=1,npos
+   inew = i+positions(ipos,1)
+   jnew = j+positions(ipos,2)
+   if ((inew.lt.1).or.(jnew.lt.1).or.(inew.gt.nx).or.(jnew.gt.ny)) cycle
+   if ((fdir(inew,jnew,1) .eq. i) .and. (fdir(inew,jnew,2) .eq. j))then
+    if (mask(inew,jnew) .eq. 1) then
+     if (area(inew,jnew) .ge. basin_threshold)then
+      hcid = hcid + 1
+      cid = hcid
+      mask(inew,jnew) = 0
+      channels(inew,jnew) = cid
+      channel_topology(cid) = cid_org !Define channel topology
+      call channels_upstream_wprop(inew,jnew,fdir,channels,positions,nx,ny,&
+                             cid,npos,mask,basin_threshold,area,hcid,&
+                             channel_topology)
+     else
+      mask(inew,jnew) = 0
+      channels(inew,jnew) = cid_org
+      call channels_upstream_wprop(inew,jnew,fdir,channels,positions,nx,ny,&
+                             cid_org,npos,mask,basin_threshold,area,hcid,&
+                             channel_topology)
+     endif
+    endif
+   endif
+  enddo
+ endif
+
+end subroutine
 
 subroutine calculate_channels_wocean(area_in,threshold,basin_threshold,fdir,mask,channels,nx,ny)
 

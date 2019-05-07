@@ -9,6 +9,7 @@ import scipy.sparse
 import copy
 import time
 import pickle
+import copy
 
 def calculate_distance(lat0,lat1,lon0,lon1):
 
@@ -997,7 +998,7 @@ def create_basin_tiles(basin_clusters,hand,basins,dh):
   #compute number of bins
   nbins = int(np.ceil(np.max(data)/dh))
   #Compute the edges
-  pedges = 1#5
+  pedges = 2.5
   bin_edges = np.linspace(0.0,np.max(data)**(1.0/float(pedges)),nbins+1)**pedges
   #compute the binning
   #(hist,bin_edges) = np.histogram(data,bins='fd')#bins=nbins)
@@ -1629,3 +1630,35 @@ def compute_polygon_info(polygons,clusters,res):
  db = {'centroid':pcxy,}
 
  return db
+
+def calculate_channel_properties(channels,channel_topology,slope,eares,mask):
+
+ #Convert to 0-index
+ channel_topology[channel_topology > 0] = channel_topology[channel_topology > 0] - 1
+
+ #Determine total number of channels
+ nc = channel_topology.size
+ channel_slope = np.zeros(nc)
+ channel_length = np.zeros(nc)
+ count = np.zeros(nc)
+ for i in range(channels.shape[0]):
+  for j in range(channels.shape[1]):
+   channel = channels[i,j]
+   if ((channel == -9999) | (channel == 0)):continue
+   channel_slope[channel-1] += slope[i,j]
+   channel_length[channel-1] += eares
+   count[channel-1] += 1
+
+ #Compute averages
+ channel_slope = channel_slope/count
+
+ #Add others
+ channel_mannings = 0.04*np.ones(nc) #Assume natural gravel stream bed
+ channel_width = 30.0*np.ones(nc) #meter
+ channel_bankfull = 1.0*np.ones(nc) #meter
+
+ #Assemble final database
+ db_channels = {'slope':channel_slope,'length':channel_length,'manning':channel_mannings,
+                'width':channel_width,'bankfull':channel_bankfull,'topology':channel_topology}
+
+ return copy.deepcopy(db_channels)

@@ -14,6 +14,7 @@ subroutines = 'calculate_d8_acc \
               cleanup_hillslopes \
               calculate_channels \
               calculate_channels_wocean \
+              calculate_channels_wocean_wprop \
               delineate_basins \
               delineate_hillslopes \
               assign_properties_to_hillslopes \
