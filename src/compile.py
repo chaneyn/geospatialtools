@@ -3,8 +3,9 @@ import os
 #os.system('rm -rf terrain_tools.pyf')
 os.system('rm -rf *.dSYM')
 #compile modules
-#os.system('gfortran -fPIC -c planchon_2001.f90')
 os.system('gfortran -fPIC -c planchon_2001.f90')
+#os.system('gfortran -fPIC -c planchon_2001.f90')
+#os.system('mpifort -fPIC -c planchon_2001.f90')
 #subroutines
 subroutines = 'calculate_d8_acc \
               calculate_d8_acc_wipoints \

@@ -117,9 +117,15 @@ class raster_data:
  def write_data(self,file,driver='GTiff'):
 
   driver = gdal.GetDriverByName(driver)
-  #dtype = self.dtype
-  ds_out = driver.Create(file,self.nx,self.ny,1,gdal.GDT_Float32)
-  ds_out.GetRasterBand(1).WriteArray(self.data.astype(np.float32))
+  dtype = self.data.dtype
+  if dtype == 'float64':
+   ds_out = driver.Create(file,self.nx,self.ny,1,gdal.GDT_Float64)
+   ds_out.GetRasterBand(1).WriteArray(self.data.astype(np.float64))
+  elif dtype == 'float32':
+   ds_out = driver.Create(file,self.nx,self.ny,1,gdal.GDT_Float32)
+   ds_out.GetRasterBand(1).WriteArray(self.data.astype(np.float32))
+  else:
+   print("Don't have a dtype define for %s" % dtype)
   ds_out.SetGeoTransform(self.gt)
   ds_out.SetProjection(self.projection)
   ds_out.GetRasterBand(1).SetNoDataValue(self.nodata)

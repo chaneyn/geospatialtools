@@ -825,14 +825,14 @@ subroutine gap_fill_hrus(hrus_in,channels,hrus_out,nx,ny)
 end subroutine gap_fill_hrus
  
 subroutine calculate_channels_wocean_wprop(area_in,threshold,basin_threshold,fdir,mask,channels,&
-                                           channels_wob,channel_topology,nx,ny)
+                                           channels_wob,channel_topology,shreve_order,nx,ny)
 
  implicit none
  integer,intent(in) :: nx,ny
  real,intent(in) :: threshold,basin_threshold
  real,intent(in),dimension(nx,ny) :: area_in,mask
  integer,intent(in),dimension(nx,ny,2) :: fdir
- integer,intent(out),dimension(nx,ny) :: channels,channels_wob
+ integer,intent(out),dimension(nx,ny) :: channels,channels_wob,shreve_order
  integer,intent(out),dimension(nx*ny) :: channel_topology
  real,dimension(nx,ny) :: area
  integer,dimension(nx,ny) :: cmask
@@ -850,6 +850,8 @@ subroutine calculate_channels_wocean_wprop(area_in,threshold,basin_threshold,fdi
  channels = 0
  !Initialize channel topology
  channel_topology = -9999
+ !Initialize shreve order
+ shreve_order = 0
 
  !Construct positions array
  pos = 0
@@ -900,7 +902,8 @@ subroutine calculate_channels_wocean_wprop(area_in,threshold,basin_threshold,fdi
 
   !Go upstream
   call channels_upstream_wprop(i,j,fdir,channels,positions,nx,ny,cid,npos,&
-                         cmask,basin_threshold,area,hcid,channel_topology)
+                         cmask,basin_threshold,area,hcid,channel_topology,&
+                         shreve_order)
 
  enddo
  
@@ -936,18 +939,20 @@ subroutine calculate_channels_wocean_wprop(area_in,threshold,basin_threshold,fdi
  !Where the mask is 0 set area to undefined
  where (((mask .eq. 0) .and. (channels_wob .eq. 0)))! .or. (channels .eq. 0))
   channels_wob = int(undef)
+  shreve_order = int(undef)
  endwhere
 
 end subroutine
 
 recursive subroutine channels_upstream_wprop(i,j,fdir,channels,positions,nx,ny,cid,npos,&
-                             mask,basin_threshold,area,hcid,channel_topology)
+                             mask,basin_threshold,area,hcid,channel_topology,shreve_order)
 
  implicit none
  integer,intent(in) :: npos,i,j,nx,ny
  integer,intent(in) :: positions(npos,2),fdir(nx,ny,2)
  real,intent(in) :: basin_threshold,area(nx,ny)
  integer,intent(inout) :: cid,channels(nx,ny),mask(nx,ny),hcid,channel_topology(nx*ny)
+ integer,intent(inout) :: shreve_order(nx,ny)
  integer :: inew,jnew,count,ipos,cid_org
  !Memorize the channel id
  cid_org = cid
@@ -968,8 +973,12 @@ recursive subroutine channels_upstream_wprop(i,j,fdir,channels,positions,nx,ny,c
   endif
  enddo
  !Decide the path to take
+ !0. No upstream cells
+ if (count .eq. 0)then
+  shreve_order(i,j) = 1
+
  !1.Only one upstream cell
- if (count .le. 1)then 
+ elseif (count .eq. 1)then 
   do ipos=1,npos
    inew = i+positions(ipos,1)
    jnew = j+positions(ipos,2)
@@ -980,10 +989,12 @@ recursive subroutine channels_upstream_wprop(i,j,fdir,channels,positions,nx,ny,c
      channels(inew,jnew) = channels(i,j)
      call channels_upstream_wprop(inew,jnew,fdir,channels,positions,nx,ny,&
                              cid,npos,mask,basin_threshold,area,hcid,&
-                             channel_topology)
+                             channel_topology,shreve_order)
+     shreve_order(i,j) = shreve_order(inew,jnew)
     endif
    endif
   enddo
+
  !2.More than one upstream cell
  elseif (count .gt. 1)then
   do ipos=1,npos
@@ -1000,13 +1011,15 @@ recursive subroutine channels_upstream_wprop(i,j,fdir,channels,positions,nx,ny,c
       channel_topology(cid) = cid_org !Define channel topology
       call channels_upstream_wprop(inew,jnew,fdir,channels,positions,nx,ny,&
                              cid,npos,mask,basin_threshold,area,hcid,&
-                             channel_topology)
+                             channel_topology,shreve_order)
+      shreve_order(i,j) = shreve_order(i,j) + shreve_order(inew,jnew) !Add upstream shreve order to current reach
      else
       mask(inew,jnew) = 0
       channels(inew,jnew) = cid_org
       call channels_upstream_wprop(inew,jnew,fdir,channels,positions,nx,ny,&
                              cid_org,npos,mask,basin_threshold,area,hcid,&
-                             channel_topology)
+                             channel_topology,shreve_order)
+      shreve_order(i,j) = shreve_order(inew,jnew)
      endif
     endif
    endif

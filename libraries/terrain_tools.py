@@ -10,6 +10,7 @@ import copy
 import time
 import pickle
 import copy
+import numba
 
 def calculate_distance(lat0,lat1,lon0,lon1):
 
@@ -61,6 +62,10 @@ def normalize_variable(input,min,max):
   data[m] = (data[m] - min)/(max-min)
  else:
   data[m] = 0.0
+ #if (np.nanstd(data[m] != 0.0)):
+ # data[m] = (data[m] - np.nanmean(data[m]))/np.nanstd(data[m])
+ #else:
+ # data[m] = 0.0
 
  return data
 
@@ -381,7 +386,10 @@ def calculate_basin_properties_updated(basins,res,cvs,vars):
     properties[var].append(np.mean(tmp[var][tmp[var] != -9999]))
    else:
     properties[var].append(-9999)'''
-   properties[var].append(np.mean(tmp[var]))
+   if var in ['shreve_order',]:
+    properties[var].append(np.max(tmp[var]))
+   else:
+    properties[var].append(np.mean(tmp[var]))
   properties['bid'].append(uh)
   count += 1
   
@@ -1631,7 +1639,20 @@ def compute_polygon_info(polygons,clusters,res):
 
  return db
 
-def calculate_channel_properties(channels,channel_topology,slope,eares,mask):
+def calculate_channel_properties(channels,channel_topology,slope,eares,mask,area_all,basins,shreve_order_map):
+
+ #Compute channel properties
+ (channel_slope,channel_length,channel_mannings,channel_width,channel_bankfull,channel_topology,channel_area,reach_area,shreve_order) = calculate_channel_properties_workhorse(channels,channel_topology,slope,eares,mask,area_all,basins,shreve_order_map)
+
+ #Assemble final database
+ db_channels = {'slope':channel_slope,'length':channel_length,'manning':channel_mannings,
+                'width':channel_width,'bankfull':channel_bankfull,'topology':channel_topology,
+                'acc':channel_area,'area':reach_area,'shreve_order':shreve_order}
+
+ return copy.deepcopy(db_channels)
+
+@numba.jit(nopython=True,cache=True)
+def calculate_channel_properties_workhorse(channels,channel_topology,slope,eares,mask,area_all,basins,shreve_order_map):
 
  #Convert to 0-index
  channel_topology[channel_topology > 0] = channel_topology[channel_topology > 0] - 1
@@ -1640,14 +1661,22 @@ def calculate_channel_properties(channels,channel_topology,slope,eares,mask):
  nc = channel_topology.size
  channel_slope = np.zeros(nc)
  channel_length = np.zeros(nc)
+ channel_area = np.zeros(nc)
+ reach_area = np.zeros(nc)
+ shreve_order = np.zeros(nc)
  count = np.zeros(nc)
  for i in range(channels.shape[0]):
   for j in range(channels.shape[1]):
    channel = channels[i,j]
+   basin = basins[i,j]
+   if ((basin == -9999) | (basin == 0)):continue
+   reach_area[basin-1] += eares**2
    if ((channel == -9999) | (channel == 0)):continue
    channel_slope[channel-1] += slope[i,j]
    channel_length[channel-1] += eares
+   if area_all[i,j] > channel_area[channel-1]:channel_area[channel-1] = area_all[i,j]
    count[channel-1] += 1
+   shreve_order[channel-1] = shreve_order_map[i,j]
 
  #Compute averages
  channel_slope = channel_slope/count
@@ -1657,8 +1686,77 @@ def calculate_channel_properties(channels,channel_topology,slope,eares,mask):
  channel_width = 30.0*np.ones(nc) #meter
  channel_bankfull = 1.0*np.ones(nc) #meter
 
- #Assemble final database
- db_channels = {'slope':channel_slope,'length':channel_length,'manning':channel_mannings,
-                'width':channel_width,'bankfull':channel_bankfull,'topology':channel_topology}
+ return (channel_slope,channel_length,channel_mannings,
+         channel_width,channel_bankfull,channel_topology,channel_area,reach_area,shreve_order)
 
- return copy.deepcopy(db_channels)
+def calculate_inlets_oulets(channels_wob,fdir,area,mask,lats,lons,mask_all,area_all):
+
+ (inlet_org,inlet_dst,outlet_org,outlet_dst) = calculate_inlets_oulets_workhorse(channels_wob,fdir,area,mask,lats,lons,mask_all,area_all)
+ db_io = {'inlet':{'org':inlet_org,'dst':inlet_dst},
+          'outlet':{'org':outlet_org,'dst':outlet_dst}}
+
+ return db_io
+
+@numba.jit(nopython=True,cache=True)
+def calculate_inlets_oulets_workhorse(channels_wob,fdir,area,mask,lats,lons,mask_all,area_all):
+
+ #Construct positions array
+ positions = np.zeros((8,2)).astype(np.int32)
+ pos = 0
+ for k in range(-1,2):
+  for l in range(-1,2):
+   if (k == 0) & (l == 0):continue
+   positions[pos,0] = k
+   positions[pos,1] = l
+   pos = pos + 1
+ i_inlet = -1
+ i_outlet = -1
+ inlet_org = np.zeros((250,5))
+ inlet_dst = np.zeros((250,5))
+ outlet_org = np.zeros((250,5))
+ outlet_dst = np.zeros((250,5))
+ for i in range(channels_wob.shape[0]):
+  for j in range(channels_wob.shape[1]):
+   if (channels_wob[i,j] <= 0) :continue
+   #Determine inlets
+   for ipos in range(positions.shape[0]):
+    inew = i+positions[ipos,0]
+    jnew = j+positions[ipos,1]
+    if ((inew < 0) | (jnew < 0) | (inew >= channels_wob.shape[0]) | (jnew >= channels_wob.shape[1])):continue
+    if ((fdir[inew,jnew,0] == i+1) & (fdir[inew,jnew,1] == j+1)) & (mask[inew,jnew] == False):
+     if ((area[inew,jnew] > 10**5) & (mask_all[inew,jnew] != -9999)):
+      i_inlet += 1
+      #Determine origin and destination grid id, lat, and lon
+      inlet_org[i_inlet,0] = mask_all[inew,jnew]
+      inlet_org[i_inlet,1] = lats[inew,jnew]
+      inlet_org[i_inlet,2] = lons[inew,jnew]
+      inlet_org[i_inlet,3] = -9999
+      inlet_org[i_inlet,4] = area_all[inew,jnew]
+      inlet_dst[i_inlet,0] = mask_all[i,j]
+      inlet_dst[i_inlet,1] = lats[i,j]
+      inlet_dst[i_inlet,2] = lons[i,j]
+      inlet_dst[i_inlet,3] = channels_wob[i,j]-1
+      inlet_dst[i_inlet,4] = area_all[i,j]
+   #Determine outlets
+   inew = fdir[i,j,0]-1
+   jnew = fdir[i,j,1]-1
+   if ((area[inew,jnew] > 10**5) & (mask[inew,jnew] == False) & (mask_all[inew,jnew] != -9999)):
+    i_outlet += 1
+    #Determine origin and destination grid id, lat, and lon
+    outlet_dst[i_outlet,0] = mask_all[inew,jnew]
+    outlet_dst[i_outlet,1] = lats[inew,jnew]
+    outlet_dst[i_outlet,2] = lons[inew,jnew]
+    outlet_dst[i_outlet,3] = -9999
+    outlet_dst[i_outlet,4] = area_all[inew,jnew]
+    outlet_org[i_outlet,0] = mask_all[i,j]
+    outlet_org[i_outlet,1] = lats[i,j]
+    outlet_org[i_outlet,2] = lons[i,j]
+    outlet_org[i_outlet,3] = channels_wob[i,j]-1
+    outlet_org[i_outlet,4] = area_all[i,j]
+
+ inlet_dst = inlet_dst[0:i_inlet+1,:]
+ inlet_org = inlet_org[0:i_inlet+1,:]
+ outlet_dst = outlet_dst[0:i_outlet+1,:]
+ outlet_org = outlet_org[0:i_outlet+1,:]
+
+ return (inlet_org,inlet_dst,outlet_org,outlet_dst)

@@ -45,12 +45,15 @@ subroutine remove_pits(z,w,res,nx,ny)
  enddo
 
  !Stage 1
+ !print*,'stage1'
  call stage1(z,w,b,nx,ny)
 
  !Stage 2 (section 1)
+ !print*,'stage21'
  call stage2section1(z,w,b,nx,ny)
 
  !Stage 2 (section 2)
+ !print*,'stage22'
  call stage2section2(z,w,b,nx,ny)
  
 end subroutine
@@ -83,6 +86,7 @@ subroutine stage2section2(z,w,b,nx,ny)
  logical :: something_done,ncflag
 
  do it=1,1000
+  !print*,'it',it
   do scan=1,8
    r = r0(scan)
    c = c0(scan)
