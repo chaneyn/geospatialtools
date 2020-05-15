@@ -58,14 +58,18 @@ def normalize_variable(input,min,max):
  m = data != -9999
  #if (np.max(data[m]) != np.min(data[m])):
  # data[m] = (data[m] - np.min(data[m]))/(np.max(data[m]) - np.min(data[m]))
- if (max != min):
-  data[m] = (data[m] - min)/(max-min)
- else:
-  data[m] = 0.0
- #if (np.nanstd(data[m] != 0.0)):
- # data[m] = (data[m] - np.nanmean(data[m]))/np.nanstd(data[m])
+ #if (max != min):
+ # data[m] = (data[m] - min)/(max-min)
  #else:
  # data[m] = 0.0
+ #if (np.std(data[m] != 0):
+ # data[m] = (data[m] - np.mean(data[m]))/np.std(data[m])
+ #else:
+ # data[m] = 0
+ if (np.nanstd(data[m]) != 0.0):
+  data[m] = (data[m] - np.nanmean(data[m]))/np.nanstd(data[m])
+ else:
+  data[m] = 0.0
 
  return data
 
@@ -1006,8 +1010,10 @@ def create_basin_tiles(basin_clusters,hand,basins,dh):
   #compute number of bins
   nbins = int(np.ceil(np.max(data)/dh))
   #Compute the edges
-  pedges = 2.5
+  pedges = 2.0#1.0#2.5
   bin_edges = np.linspace(0.0,np.max(data)**(1.0/float(pedges)),nbins+1)**pedges
+  #Add another bin edge to ensure the channel (hand = 0) is explicitly represented
+  bin_edges = np.concatenate((np.array([0.0,]),bin_edges))
   #compute the binning
   #(hist,bin_edges) = np.histogram(data,bins='fd')#bins=nbins)
   #update edges
