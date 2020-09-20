@@ -1028,6 +1028,230 @@ recursive subroutine channels_upstream_wprop(i,j,fdir,channels,positions,nx,ny,c
 
 end subroutine
 
+subroutine calculate_channels_wocean_wprop_wcrds(area_in,threshold,basin_threshold,fdir,mask,lats,lons,channels,&
+                                           channels_wob,channel_topology,shreve_order,crds,nx,ny)
+
+ implicit none
+ integer,intent(in) :: nx,ny
+ real,intent(in) :: threshold,basin_threshold
+ real,intent(in),dimension(nx,ny) :: area_in,mask,lats,lons
+ integer,intent(in),dimension(nx,ny,2) :: fdir
+ integer,intent(out),dimension(nx,ny) :: channels,channels_wob,shreve_order
+ integer,intent(out),dimension(nx*ny) :: channel_topology
+ !The dimensions of crds are just for pure convenience
+ real,intent(out),dimension(10000,1000,2) :: crds
+ real,dimension(nx,ny) :: area
+ integer,dimension(nx,ny) :: cmask
+ integer,dimension(10000) :: crds_count
+ integer,dimension(2) :: placement
+ integer,dimension(:,:),allocatable :: positions
+ integer :: i,j,pos,cid,k,l,npos,imin,imax,jmin,jmax,hcid
+ logical :: bool
+ real :: undef
+ undef = -9999.0
+ npos = 8
+ allocate(positions(npos,2))
+ !Copy the area array
+ area = area_in
+ !Initialize channels 
+ channels = 0
+ !Initialize channel topology
+ channel_topology = -9999
+ !Initialize shreve order
+ shreve_order = 0
+ !Initialize coordinates array
+ crds = -9999
+ crds_count = 1
+
+ !Construct positions array
+ pos = 0
+ do k=-1,1
+  do l=-1,1
+   if ((k == 0) .and. (l == 0)) cycle
+   pos = pos + 1
+   positions(pos,1) = k
+   positions(pos,2) = l
+  enddo
+ enddo
+
+ !Define the channels mask
+ where (area .gt. threshold)
+  cmask = 1
+ elsewhere
+  cmask = 0
+ endwhere
+
+ !Differentiate the channels by segments
+ hcid = 0
+ bool = .False.
+ do while (bool .eqv. .False.)
+
+  !Set cid to hcid
+  hcid = hcid + 1
+  cid = hcid
+  
+  !Determine if there are still are cells
+  if (maxval(cmask) .eq. 0) bool = .True.
+
+  !Maskout the area
+  where (cmask .eq. 0) 
+   area = 0
+  endwhere
+
+  !Find the highest accumulation area
+  placement = maxloc(area)
+  i = placement(1)
+  j = placement(2)
+  !Set the channel id
+  if ((cmask(i,j) .eq. 1) .and. (area(i,j) .ge. basin_threshold))then
+   channels(i,j) = cid
+   !Define outlet beyond catchment
+   channel_topology(cid) = -1
+  endif
+  cmask(i,j) = 0
+
+  !Go upstream
+  call channels_upstream_wprop_wcrds(i,j,fdir,channels,positions,nx,ny,cid,npos,&
+                         cmask,basin_threshold,area,hcid,channel_topology,&
+                         shreve_order,lats,lons,crds,crds_count)
+
+ enddo
+ 
+ !Memorize the preboundaries channels
+ channels_wob = channels
+
+ !Set the ocean/land, lake/land, and glacier/land boundaries as "channels"
+ cid = 999999!max(maxval(channels),1)
+ do i = 1,nx
+  do j = 1,ny
+   !Determine if this point is not "land"
+   if (mask(i,j) == 0.0) then
+    imin = i-1
+    imax = i+1
+    jmin = j-1
+    jmax = j+1
+    !Determine if any of the surrounding points are land
+    if (i .eq. 1)imin = 1
+    if (i .eq. nx)imax = nx
+    if (j .eq. 1)jmin = 1
+    if (j .eq. ny)jmax = ny
+    if (maxval(mask(imin:imax,jmin:jmax)) .gt. 0)channels(i,j) = cid
+    cid = cid + 1
+   endif
+  enddo
+ enddo
+
+ !Where the mask is 0 set area to undefined
+ where (((mask .eq. 0) .and. (channels .eq. 0)))! .or. (channels .eq. 0))
+  channels = int(undef)
+ endwhere
+
+ !Where the mask is 0 set area to undefined
+ where (((mask .eq. 0) .and. (channels_wob .eq. 0)))! .or. (channels .eq. 0))
+  channels_wob = int(undef)
+  shreve_order = int(undef)
+ endwhere
+
+end subroutine
+
+recursive subroutine channels_upstream_wprop_wcrds(i,j,fdir,channels,positions,nx,ny,cid,npos,&
+                             mask,basin_threshold,area,hcid,channel_topology,shreve_order,&
+                             lats,lons,crds,crds_count)
+
+ implicit none
+ integer,intent(in) :: npos,i,j,nx,ny
+ integer,intent(in) :: positions(npos,2),fdir(nx,ny,2)
+ real,intent(in) :: basin_threshold,area(nx,ny)
+ integer,intent(inout) :: cid,channels(nx,ny),mask(nx,ny),hcid,channel_topology(nx*ny)
+ integer,intent(inout) :: shreve_order(nx,ny),crds_count(10000)
+ real,intent(in) :: lats(nx,ny),lons(nx,ny)
+ real,intent(inout) :: crds(10000,1000,2)
+ integer :: inew,jnew,count,ipos,cid_org
+ !Memorize the channel id
+ cid_org = cid
+
+ !Memorize the coordinates
+ crds(cid,crds_count(cid),1) = lats(i,j)
+ crds(cid,crds_count(cid),2) = lons(i,j)
+ !Update the position of the last coordinate
+ crds_count(cid) =  crds_count(cid) + 1
+
+ !Determine how many cells flow into this cell 
+ count = 0
+ do ipos=1,npos
+  inew = i+positions(ipos,1)
+  jnew = j+positions(ipos,2)
+  if ((inew .lt. 1) .or. (jnew .lt. 1) .or. (inew .gt. nx) .or. (jnew .gt.ny))cycle
+  if ((fdir(inew,jnew,1) .eq. i) .and. (fdir(inew,jnew,2) .eq. j))then
+   if (mask(inew,jnew) .eq. 1) then
+    !Make sure we are above the threshold
+    if (area(inew,jnew) .ge. basin_threshold) then
+     count = count + 1
+    endif
+   endif
+  endif
+ enddo
+ !Decide the path to take
+ !0. No upstream cells
+ if (count .eq. 0)then
+  shreve_order(i,j) = 1
+
+ !1.Only one upstream cell
+ elseif (count .eq. 1)then 
+  do ipos=1,npos
+   inew = i+positions(ipos,1)
+   jnew = j+positions(ipos,2)
+   if ((inew.lt.1).or.(jnew.lt.1).or.(inew.gt.nx).or.(jnew.gt.ny)) cycle
+   if ((fdir(inew,jnew,1) .eq. i) .and. (fdir(inew,jnew,2) .eq. j))then
+    if (mask(inew,jnew) .eq. 1) then
+     mask(inew,jnew) = 0
+     channels(inew,jnew) = channels(i,j)
+     call channels_upstream_wprop_wcrds(inew,jnew,fdir,channels,positions,nx,ny,&
+                             cid,npos,mask,basin_threshold,area,hcid,&
+                             channel_topology,shreve_order,lats,lons,crds,crds_count)
+     shreve_order(i,j) = shreve_order(inew,jnew)
+    endif
+   endif
+  enddo
+
+ !2.More than one upstream cell
+ elseif (count .gt. 1)then
+  do ipos=1,npos
+   inew = i+positions(ipos,1)
+   jnew = j+positions(ipos,2)
+   if ((inew.lt.1).or.(jnew.lt.1).or.(inew.gt.nx).or.(jnew.gt.ny)) cycle
+   if ((fdir(inew,jnew,1) .eq. i) .and. (fdir(inew,jnew,2) .eq. j))then
+    if (mask(inew,jnew) .eq. 1) then
+     if (area(inew,jnew) .ge. basin_threshold)then
+      hcid = hcid + 1
+      cid = hcid
+      mask(inew,jnew) = 0
+      channels(inew,jnew) = cid
+      channel_topology(cid) = cid_org !Define channel topology
+      !Memorize the coordinates (of the downstream reach; this creates the link)
+      crds(cid,crds_count(cid),1) = lats(i,j)
+      crds(cid,crds_count(cid),2) = lons(i,j)
+      !Update the position of the last coordinate
+      crds_count(cid) =  crds_count(cid) + 1
+      call channels_upstream_wprop_wcrds(inew,jnew,fdir,channels,positions,nx,ny,&
+                             cid,npos,mask,basin_threshold,area,hcid,&
+                             channel_topology,shreve_order,lats,lons,crds,crds_count)
+      shreve_order(i,j) = shreve_order(i,j) + shreve_order(inew,jnew) !Add upstream shreve order to current reach
+     else
+      mask(inew,jnew) = 0
+      channels(inew,jnew) = cid_org
+      call channels_upstream_wprop_wcrds(inew,jnew,fdir,channels,positions,nx,ny,&
+                             cid_org,npos,mask,basin_threshold,area,hcid,&
+                             channel_topology,shreve_order,lats,lons,crds,crds_count)
+      shreve_order(i,j) = shreve_order(inew,jnew)
+     endif
+    endif
+   endif
+  enddo
+ endif
+
+end subroutine
+
 subroutine calculate_channels_wocean(area_in,threshold,basin_threshold,fdir,mask,channels,nx,ny)
 
  implicit none
@@ -1686,6 +1910,71 @@ recursive subroutine determine_channel_depth(i,j,channeldepth,cd,fdir,mask,nx,ny
 
 end subroutine
 
+subroutine calculate_distance2channel(channels,mask,fdir,dx,distance2channel,nx,ny)
+
+ implicit none
+ integer,intent(in) :: nx,ny
+ integer,intent(in) :: channels(nx,ny),fdir(nx,ny,2)
+ integer,intent(in) :: mask(nx,ny)
+ real,intent(in) :: dx
+ real,intent(out) :: distance2channel(nx,ny)
+ integer :: i,j
+ real :: undef = -9999.0
+
+ !Initialize
+ distance2channel = undef
+
+ !Set travel distance to 0 at the channel
+ where (channels .gt. 0)
+  distance2channel = 0.0
+ endwhere
+
+ !Iterate cell by cell
+ do i=1,nx
+  do j=1,ny
+   !Only work on this cell if the basin id is unknown and the mask is positive
+   if ((distance2channel(i,j) .eq. undef) .and. (mask(i,j) .ge. 1)) then
+    call determine_distance2channel(i,j,distance2channel,fdir,mask,dx,nx,ny)
+   endif
+  enddo
+ enddo
+
+ !Set all values that are outside of the mask to undef
+ where (mask .le. 0)
+  distance2channel = undef
+ endwhere
+
+end subroutine
+
+recursive subroutine determine_distance2channel(i,j,distance2channel,fdir,mask,dx,nx,ny)
+
+ implicit none
+ integer,intent(in) :: i,j,nx,ny,fdir(nx,ny,2)
+ integer,intent(in) :: mask(nx,ny)
+ real,intent(inout) :: distance2channel(nx,ny)
+ real,intent(in) :: dx
+ real :: d2c
+ integer :: inew,jnew
+ !Determine which way is down
+ inew = fdir(i,j,1)
+ jnew = fdir(i,j,2)
+ if ((inew.lt.1).or.(jnew.lt.1).or.(inew.gt.nx).or.(jnew.gt.ny))return
+ if (mask(i,j) .eq. 0)return
+ !Figure out if downhill has a value if not then recurse.
+ if (distance2channel(inew,jnew) .lt. 0)then
+  call determine_distance2channel(inew,jnew,distance2channel,fdir,mask,dx,nx,ny)
+ endif
+ !Record the value
+ if ((inew .eq. i) .or. (jnew .eq. j))then
+  d2c = distance2channel(inew,jnew) + dx
+ endif
+ if ((inew .ne. i) .and. (jnew .ne. j))then
+  d2c = distance2channel(inew,jnew) + sqrt(2.0)*dx
+ endif
+ if (d2c .ge. 0)distance2channel(i,j) = d2c
+
+end subroutine
+
 subroutine assign_clusters_to_hillslopes(hillslopes_org,clusters,hillslopes_new,nx,ny,nh)
 
  implicit none
@@ -1709,7 +1998,7 @@ subroutine assign_clusters_to_hillslopes(hillslopes_org,clusters,hillslopes_new,
 
 end subroutine
 
-subroutine find_polygon(din,dout,i,j,cid,pid,nx,ny)
+recursive subroutine find_polygon(din,dout,i,j,cid,pid,nx,ny)
 
  implicit none
  integer,intent(in) :: i,j,nx,ny

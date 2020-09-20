@@ -91,13 +91,14 @@ def cluster_data(X,nc):
  if nc > 1:
   nfeatures = X.shape[1]
   #model = sklearn.cluster.MiniBatchKMeans(n_clusters=nc,random_state=35799)
-  model = sklearn.cluster.KMeans(n_clusters=nc,random_state=35799)
+  model = sklearn.cluster.KMeans(n_clusters=nc,random_state=35799,init='k-means++')
   #model = KMeans(nc)
   #model.compute(X)
   #exit()
   #model.fit(X[idx,:])
-  p = model.fit_predict(X)
-  #p = model.predict(X)
+  p = model.fit(X[idx,:])
+  #p = model.fit_predict(X)
+  p = model.predict(X)
  else:
   p = np.zeros(X.shape[0])
 
@@ -390,7 +391,7 @@ def calculate_basin_properties_updated(basins,res,cvs,vars):
     properties[var].append(np.mean(tmp[var][tmp[var] != -9999]))
    else:
     properties[var].append(-9999)'''
-   if var in ['shreve_order',]:
+   if var in ['shreve_order','carea','carea_log10']:
     properties[var].append(np.max(tmp[var]))
    else:
     properties[var].append(np.mean(tmp[var]))
@@ -1043,7 +1044,7 @@ def create_hrus_hydroblocks(hillslopes,htiles,covariates,nclusters):
  for var in covariates: 
   val = np.mean(covariates[var]['d'][covariates[var]['d'] != -9999])
   covariates[var]['d'][covariates[var]['d'] == -9999] = val
- import sklearn.cluster
+ #import sklearn.cluster
  hrus = np.copy(hillslopes)
  hrus[:] = -9999
  #Iterate through each gru and tile and compute hrus
@@ -1053,7 +1054,19 @@ def create_hrus_hydroblocks(hillslopes,htiles,covariates,nclusters):
  for uh in uhs:
   mh = hillslopes == uh
   uts = np.unique(htiles[mh])
+  #Determine fractional coverage of each height band
+  fct = []
   for ut in uts:
+   fct.append(np.sum(htiles == ut)/np.sum(mh))
+  fct = np.array(fct)
+  #Use fractions to determine the number of clusters
+  tnc = np.ceil(uts.size*nclusters*fct).astype(np.int32)
+  #Ensure the average number of clusters is consistent with the defined parameter
+  while np.mean(tnc) > nclusters:
+    tnc[np.argmax(tnc)] = tnc[np.argmax(tnc)] - 1
+  #Process each tile
+  for it in range(uts.size):#ut in uts:
+   ut = uts[it]
    mt = mh & (htiles == ut)
    #Compute the parameters for the clustering algorithm
    ccp = {}
@@ -1065,7 +1078,8 @@ def create_hrus_hydroblocks(hillslopes,htiles,covariates,nclusters):
    if flag == True:
     (nc,ws) = compute_cluster_parameters(ccp,maxnc)
    else:
-    nc = nclusters
+    nc = tnc[it]#nclusters
+    #print(uh,ut,nc)
     ws = np.ones(len(ccp.keys()))
    #print 'hillslope: %d, tile: %d, nc: %d' % (uh,ut,nc)
    #Add weights to covariates
@@ -1645,20 +1659,21 @@ def compute_polygon_info(polygons,clusters,res):
 
  return db
 
-def calculate_channel_properties(channels,channel_topology,slope,eares,mask,area_all,basins,shreve_order_map):
+def calculate_channel_properties(channels,channel_topology,slope,eares,mask,area_all,area_all_cp,basins,shreve_order_map,pscaling):
 
  #Compute channel properties
- (channel_slope,channel_length,channel_mannings,channel_width,channel_bankfull,channel_topology,channel_area,reach_area,shreve_order) = calculate_channel_properties_workhorse(channels,channel_topology,slope,eares,mask,area_all,basins,shreve_order_map)
+ (channel_slope,channel_length,channel_mannings,channel_width,channel_bankfull,channel_topology,channel_area,reach_area,shreve_order,floodplain_mannings) = calculate_channel_properties_workhorse(channels,channel_topology,slope,eares,mask,area_all,area_all_cp,basins,shreve_order_map,pscaling['channel_manning'],pscaling['floodplain_manning'],pscaling['bankfull_depth'],pscaling['channel_width'])
 
  #Assemble final database
- db_channels = {'slope':channel_slope,'length':channel_length,'manning':channel_mannings,
+ db_channels = {'slope':channel_slope,'length':channel_length,'manning_channel':channel_mannings,
                 'width':channel_width,'bankfull':channel_bankfull,'topology':channel_topology,
-                'acc':channel_area,'area':reach_area,'shreve_order':shreve_order}
+                'acc':channel_area,'area':reach_area,
+                'shreve_order':shreve_order,'manning_floodplain':floodplain_mannings}
 
  return copy.deepcopy(db_channels)
 
 @numba.jit(nopython=True,cache=True)
-def calculate_channel_properties_workhorse(channels,channel_topology,slope,eares,mask,area_all,basins,shreve_order_map):
+def calculate_channel_properties_workhorse(channels,channel_topology,slope,eares,mask,area_all,area_all_cp,basins,shreve_order_map,m_c_n,m_fp_n,m_bd,m_cw):
 
  #Convert to 0-index
  channel_topology[channel_topology > 0] = channel_topology[channel_topology > 0] - 1
@@ -1668,6 +1683,7 @@ def calculate_channel_properties_workhorse(channels,channel_topology,slope,eares
  channel_slope = np.zeros(nc)
  channel_length = np.zeros(nc)
  channel_area = np.zeros(nc)
+ channel_area_cp = np.zeros(nc)
  reach_area = np.zeros(nc)
  shreve_order = np.zeros(nc)
  count = np.zeros(nc)
@@ -1681,6 +1697,7 @@ def calculate_channel_properties_workhorse(channels,channel_topology,slope,eares
    channel_slope[channel-1] += slope[i,j]
    channel_length[channel-1] += eares
    if area_all[i,j] > channel_area[channel-1]:channel_area[channel-1] = area_all[i,j]
+   if area_all_cp[i,j] > channel_area_cp[channel-1]:channel_area_cp[channel-1] = area_all_cp[i,j]
    count[channel-1] += 1
    shreve_order[channel-1] = shreve_order_map[i,j]
 
@@ -1688,12 +1705,20 @@ def calculate_channel_properties_workhorse(channels,channel_topology,slope,eares
  channel_slope = channel_slope/count
 
  #Add others
- channel_mannings = 0.04*np.ones(nc) #Assume natural gravel stream bed
- channel_width = 30.0*np.ones(nc) #meter
- channel_bankfull = 1.0*np.ones(nc) #meter
+ channel_mannings = m_c_n*0.035*np.ones(nc) #Assume natural gravel stream bed
+ floodplain_mannings = m_fp_n*0.15*np.ones(nc) #Assume natural gravel stream bed
+ #Compute bankfull width and height (only applicable for United States ();
+ channel_width = m_cw*2.70*(channel_area_cp*10**-6)**0.352#30.0*np.ones(nc) #meter
+ tmp = reach_area/channel_length
+ channel_width[channel_width > tmp] = tmp[channel_width > tmp]
+ channel_bankfull = m_bd*0.30*(channel_area_cp*10**-6)**0.213#1.0*np.ones(nc) #meter
+ #Compute bankfull width and height (only applicable for Atlantic Plain of US)
+ #channel_width = 2.22*(channel_area*10**-6)**0.363#30.0*np.ones(nc) #meter
+ #channel_bankfull = 0.24*(channel_area*10**-6)**0.323#1.0*np.ones(nc) #meter
 
  return (channel_slope,channel_length,channel_mannings,
-         channel_width,channel_bankfull,channel_topology,channel_area,reach_area,shreve_order)
+         channel_width,channel_bankfull,channel_topology,channel_area,reach_area,shreve_order,
+         floodplain_mannings)
 
 def calculate_inlets_oulets(channels_wob,fdir,area,mask,lats,lons,mask_all,area_all):
 
@@ -1730,7 +1755,7 @@ def calculate_inlets_oulets_workhorse(channels_wob,fdir,area,mask,lats,lons,mask
     jnew = j+positions[ipos,1]
     if ((inew < 0) | (jnew < 0) | (inew >= channels_wob.shape[0]) | (jnew >= channels_wob.shape[1])):continue
     if ((fdir[inew,jnew,0] == i+1) & (fdir[inew,jnew,1] == j+1)) & (mask[inew,jnew] == False):
-     if ((area[inew,jnew] > 10**5) & (mask_all[inew,jnew] != -9999)):
+     if ((area[inew,jnew] > 10**4) & (mask_all[inew,jnew] != -9999)):
       i_inlet += 1
       #Determine origin and destination grid id, lat, and lon
       inlet_org[i_inlet,0] = mask_all[inew,jnew]
@@ -1746,7 +1771,7 @@ def calculate_inlets_oulets_workhorse(channels_wob,fdir,area,mask,lats,lons,mask
    #Determine outlets
    inew = fdir[i,j,0]-1
    jnew = fdir[i,j,1]-1
-   if ((area[inew,jnew] > 10**5) & (mask[inew,jnew] == False) & (mask_all[inew,jnew] != -9999)):
+   if ((area[inew,jnew] > 10**4) & (mask[inew,jnew] == False) & (mask_all[inew,jnew] != -9999)):
     i_outlet += 1
     #Determine origin and destination grid id, lat, and lon
     outlet_dst[i_outlet,0] = mask_all[inew,jnew]
@@ -1766,3 +1791,317 @@ def calculate_inlets_oulets_workhorse(channels_wob,fdir,area,mask,lats,lons,mask
  outlet_org = outlet_org[0:i_outlet+1,:]
 
  return (inlet_org,inlet_dst,outlet_org,outlet_dst)
+
+@numba.jit(nopython=True,cache=True)
+def determine_band_position(nhand,bin_edges,basin_clusters):
+    #Determine the position of the height band with respect to the channel
+    band_position = np.copy(nhand).astype(np.int32)
+    basin_clusters = basin_clusters.astype(np.int32)
+    band_position[:] = -9999
+    for i in range(nhand.shape[0]):
+        for j in range(nhand.shape[1]):
+            if (nhand[i,j] == -9999) | (basin_clusters[i,j] == -9999):continue
+            bc = basin_clusters[i,j]-1
+            for k in range(bin_edges[bc,:].size-1):
+                if bin_edges[bc,k+1] == -9999:break
+                if (nhand[i,j] >= bin_edges[bc,k]) & (nhand[i,j] <= bin_edges[bc,k+1]):
+                    band_position[i,j] = k
+                    break
+    return band_position
+
+@numba.jit(nopython=True,cache=True)
+def curate_band_position(band_position,basins):
+    basins = basins.astype(np.int32)
+    #Determine the count of each id per basin
+    ubs = np.unique(basins)
+    ubs = ubs[ubs != -9999]
+    obdb = np.zeros((ubs.size,np.max(band_position)+1))
+    for i in range(band_position.shape[0]):
+        for j in range(band_position.shape[1]):
+            if band_position[i,j] == -9999:continue
+            basin = basins[i,j]-1
+            bp = band_position[i,j]
+            obdb[basin,bp] += 1
+            
+    #Iterate per basin count and look for problematic ones and assign a mapping to correct
+    mapping = np.zeros((ubs.size,np.max(band_position)+1)).astype(np.int32)
+    mapping[:] = -9999
+    bdb = np.copy(obdb)
+    for ib in range(bdb.shape[0]):
+        flag = 0
+        for l in range(bdb.shape[1]-1):
+            if (bdb[ib,l] == 0) & (np.sum(bdb[ib,l:])!=0):
+                flag = 1
+                #Shift all down by one
+                while bdb[ib,l] == 0:
+                    bdb[ib,l:-1] = bdb[ib,l+1:]
+                    bdb[ib,-1] = 0
+        #Assemble mapping by starting from the back
+        if flag == 1:
+            bls = np.arange(bdb.shape[1])[::-1]
+            m = bls.size-1
+            for l in bls:
+                if (obdb[ib,l] != 0) & (np.sum(obdb[ib,:l] == 0) > 0):#(bdb[ib,l] != obdb[ib,l]):
+                    #Search for the first one in the update one that is not 0
+                    if l < m:m = l
+                    bls2 = np.arange(bdb.shape[1])[:m][::-1]
+                    for m in bls2:
+                        if bdb[ib,m] != 0:
+                            if m != l:mapping[ib,l] = m
+                            break
+    #Correct the original map (and save correction flag)
+    band_correction = np.copy(band_position)
+    band_correction[:] = -9999
+    band_position2 = np.copy(band_position)
+    band_position2[:] = -9999
+    for i in range(band_position.shape[0]):
+        for j in range(band_position.shape[1]):
+            if band_position[i,j] == -9999:continue
+            basin = basins[i,j]-1
+            bp = band_position[i,j]
+            if mapping[basin,bp] != -9999:
+                band_position2[i,j] = mapping[basin,bp]
+                band_correction[i,j] = 1
+            else:
+                band_position2[i,j] =  band_position[i,j]
+            
+    return (band_position2,band_correction)
+
+@numba.jit(nopython=True,cache=True)
+def determine_band_hand(nhand,band_position,basin_clusters,band_correction):
+    
+    basin_clusters = basin_clusters.astype(np.int32)
+    #1.Construct database of nhand value per band per basin cluster
+    ubcs = np.unique(basin_clusters)
+    ubcs = ubcs[ubcs != -9999]
+    vals = 10**5*np.ones((ubcs.size,np.max(band_position)+1))
+    #counts = np.zeros((ubcs.size,np.max(band_position)+1))
+    for i in range(nhand.shape[0]):
+        for j in range(nhand.shape[1]):
+            if ((basin_clusters[i,j] == -9999) | (band_position[i,j] == -9999)):continue
+            if (band_correction[i,j] == 1):continue
+            bc = basin_clusters[i,j]-1
+            bp = band_position[i,j]
+            if nhand[i,j] < vals[bc,bp]:
+             vals[bc,bp] = nhand[i,j]
+            #vals[bc,bp] += nhand[i,j]
+            #counts[bc,bp] += 1
+    #1.5 Compute the means
+    #for i in range(vals.shape[0]):
+    #    for j in range(vals.shape[1]):
+    #        if counts[i,j] > 0:
+    #            vals[i,j]= vals[i,j]/counts[i,j]
+    ##2.0 Place the means
+    #2.0 Place the mins
+    band_nhand = np.copy(nhand)
+    band_nhand[:] = -9999.0
+    for i in range(nhand.shape[0]):
+        for j in range(nhand.shape[1]):
+            if ((basin_clusters[i,j] == -9999) | (band_position[i,j] == -9999)):continue
+            bc = basin_clusters[i,j]-1
+            bp = band_position[i,j]
+            band_nhand[i,j] = vals[bc,bp]
+            
+    return band_nhand
+
+@numba.jit(nopython=True,cache=True)
+def determine_band_id(band_position,basin_clusters):
+    
+    basin_clusters = basin_clusters.astype(np.int32)
+    #Assemble a database to assign a unique id to each band position and basin cluster
+    ubcs = np.unique(basin_clusters)
+    ubcs = ubcs[ubcs != -9999]
+    bps = np.zeros((ubcs.size,np.max(band_position)+1))
+    for i in range(band_position.shape[0]):
+        for j in range(band_position.shape[1]):
+            if ((basin_clusters[i,j] == -9999) | (band_position[i,j] == -9999)):continue
+            bc = basin_clusters[i,j]-1
+            bp = band_position[i,j]
+            bps[bc,bp] = 1
+    #Determine the id for each site
+    bids = np.zeros(bps.shape).astype(np.int32)
+    count = 0
+    for i in range(bps.shape[0]):
+        for j in range(bps.shape[1]):
+            if bps[i,j] == 1:
+             bids[i,j] = count
+             count += 1
+    #Place the data
+    band_id = np.zeros(basin_clusters.shape).astype(np.int32)
+    band_id[:] = -9999
+    for i in range(band_position.shape[0]):
+        for j in range(band_position.shape[1]):
+            if ((basin_clusters[i,j] == -9999) | (band_position[i,j] == -9999)):continue
+            bc = basin_clusters[i,j]-1
+            bp = band_position[i,j]
+            band_id[i,j] = bids[bc,bp]
+    return band_id
+
+@numba.jit(nopython=True,cache=True)
+def normalize_hand_values(hand,basins):
+    #Normalize the hand values in each basin across the clusters
+    nhand = np.copy(hand)
+    basins = basins.astype(np.int32)
+    ubs = np.unique(basins)
+    ubs = ubs[ubs != -9999]
+    db = np.zeros(ubs.size)
+    for i in range(basins.shape[0]):
+     for j in range(basins.shape[1]):
+      if basins[i,j] == -9999:continue
+      b = basins[i,j]-1
+      if hand[i,j] > db[b]:db[b] = hand[i,j]
+    #1.Normalize each basin
+    maxhand = np.copy(hand)
+    for i in range(basins.shape[0]):
+     for j in range(basins.shape[1]):
+      if basins[i,j] == -9999:continue
+      b = basins[i,j]-1
+      if db[b] != 0:nhand[i,j] = hand[i,j]/db[b]
+      maxhand[i,j] = db[b]
+    
+    return (nhand,maxhand)
+
+#@numba.jit(nopython=True,cache=True)
+def cdf_match_hand_values(hand,basins,basin_clusters):
+
+ #CDF match the hand values of all basins that belong to a given cluster
+ ubcs = np.unique(basin_clusters).astype(np.int32)
+ ubcs = ubcs[ubcs != -9999]
+ nhand = np.copy(hand)
+ npct = 250
+ for ub in ubcs:
+    #Determine total number of cells of non-zero hand values
+    m = (basin_clusters == ub) & (hand != 0)
+    ncells = np.sum(m)
+    vals = np.zeros(npct)
+    pcts = np.linspace(0,1,npct)
+    #Compute ecdf of all non-zero hand values for each basin
+    ubs = np.unique(basins[m])
+    tmp = 0
+    for b in ubs: 
+        m1 = (basins == b) & (hand != 0)
+        vals1 = hand[m1]
+        #Remove the HAND derived channel depth (HACK)
+        vals1 = vals1 - np.min(vals1) + 10**-10
+        hand[m1] = vals1[:]
+        #Construct ecdf for the basin data
+        argsort = np.argsort(vals1)
+        pcts1 = np.zeros(vals1.size)
+        pcts1[argsort] = np.linspace(0,1,pcts1.size)
+        #Interpolate to the desired pcts
+        fct = np.sum(m1)/np.sum(m)
+        vals += fct*np.interp(pcts,pcts1[argsort],vals1[argsort])
+    #CDF match the hands of each basin
+    for b in ubs:
+        m1 = (basins == b) & (hand != 0)
+        vals1 = hand[m1]
+        #Construct ecdf for the basin data
+        argsort = np.argsort(vals1)
+        pcts1 = np.zeros(vals1.size)
+        pcts1[argsort] = np.linspace(0,1,pcts1.size)
+        #CDF match to the basin cluster cdf
+        vals2 = np.copy(vals1)
+        vals2[argsort] = np.interp(pcts1[argsort],pcts,vals)
+        nhand[m1] = vals2[:] 
+    
+ return nhand
+
+def create_basin_tiles_updated(basin_clusters,hand,basins,n_binning,max_nbins=100):
+    
+    #Assemble normalized hand and maxhand data
+    #(nhand,maxhand) = normalize_hand_values(hand,basins)
+    nhand = cdf_match_hand_values(hand,basins,basin_clusters)
+    
+    #Compute the bin edges
+    ubcs = np.unique(basin_clusters).astype(np.int32)
+    ubcs = ubcs[ubcs != -9999]
+    bin_edges = np.zeros((ubcs.size,100))
+    bin_edges[:] = -9999
+    for ubc in ubcs:
+        m = basin_clusters == ubc
+        #data = hand[m]
+        data = nhand[m]
+        #Calculate pct areal coverage of subbasin from channel cells
+        a = np.sum(data == 0)/data.size
+        #Calculate percentiles
+        argsort = np.argsort(data)
+        pcts = np.copy(data)
+        pcts[argsort] = np.linspace(0,1,data.size)
+        #Compute the edges
+        x = np.arange(max_nbins)
+        tmp1 = a*n_binning**x
+        m1 = (tmp1 <= 1.0) & (tmp1 >= a)
+        tmp1 = tmp1[m1]
+        #Find the closest matches in the pcts
+        tmp = np.copy(tmp1)
+        tmp[:] = -9999
+        for i in range(tmp.size):
+         if i == 0:tmp[i] = 0.0
+         else:
+            argmin = np.argmin(np.abs(tmp1[i] - pcts))
+            tmp[i] = data[argmin]
+        #Min size of tmp
+        if tmp.size < 2:
+         tmp = np.zeros(2)
+        #Enforce the last value to be the max
+        tmp[-1] = np.max(data)
+        #Place the data
+        bin_edges[ubc-1,:tmp.size+1] = np.concatenate((np.array([0.0,]),tmp))
+        #tmp = np.cumsum(0.05*np.exp(np.arange(max_nbins)/1))
+        #tmp = np.cumsum(0.25*np.exp(np.arange(max_nbins)))
+        #tmp = np.cumsum(0.1*np.exp(np.arange(max_nbins)))
+        #Add another bin edge to ensure the channel (hand = 0) is explicitly represented
+        #if tmp[-1] < np.max(data):
+        #    bin_edges[ubc-1,:max_nbins+3] = np.concatenate(((np.array([0.0,0.0]),tmp,np.array([np.max(data),]))))
+        #else:
+        #    bin_edges[ubc-1,:max_nbins+2] = np.concatenate((np.array([0.0,0.0]),tmp))
+        #curate
+        #data[data == -9999] = np.max(data[data != -9999])
+        #hand[m & (hand == -9999)] = np.max(hand[m & (hand != -9999)])
+        #compute number of bins
+        #nbins = int(np.ceil(np.max(data)/dh))
+        #Split based on percentiles and not the actual values ("areal" approach)
+        #Compute the percentiles of the hand values
+        '''m1 = nhand[m]!=0
+        data1 = nhand[m][m1]
+        argsort = np.argsort(data1)
+        pcts = np.copy(data1)
+        pcts[argsort] = np.linspace(0,1,data1.size)
+        #Compute the edges (this is for the area)
+        pedges = 2.0
+        tmp1 = np.linspace(0.0,1.0**(1.0/float(pedges)),nbins+1)**pedges
+        #Find the closes matches in the pcts
+        tmp = np.copy(tmp1)
+        tmp[:] = -9999
+        for i in range(nbins+1):
+          if i == 0:tmp[i] = 0.0
+          else:
+            argmin = np.argmin(np.abs(tmp1[i] - pcts))
+            tmp[i] = nhand[m][m1][argmin]'''
+        #Compute the edges (Old absolute approach)
+        #pedges = 2.0
+        #tmp= np.linspace(0.0,1.0**(1.0/float(pedges)),nbins+1)**pedges
+        #Add another bin edge to ensure the channel (hand = 0) is explicitly represented
+        #bin_edges[ubc-1,:nbins+2] = np.concatenate((np.array([0.0,]),tmp))
+    
+    #Determine band position
+    band_position = determine_band_position(nhand,bin_edges,basin_clusters)
+    
+    #Correct band position
+    (band_position2,band_correction) = curate_band_position(band_position,basins)
+    
+    #Compute band hand
+    band_nhand = determine_band_hand(nhand,band_position2,basin_clusters,band_correction)
+    
+    #Compute band id
+    band_id = determine_band_id(band_position2,basin_clusters)
+    
+    #2.Compute basin cluster average max hand and scale up the new hand values
+    #ubcs = np.unique(basin_clusters)
+    #ubcs = ubcs[ubcs != -9999]
+    #for ubc in ubcs:
+    #    m = basin_clusters == ubc
+    #    #val = np.mean(maxhand[m])
+    #    band_nhand[m] = val*band_nhand[m]
+    
+    return (band_id,band_nhand,band_position)

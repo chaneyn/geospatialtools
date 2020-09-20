@@ -9,12 +9,13 @@ def configuration(parent_package='', top_path=None):
 
     config.add_extension('terrain_tools_fortran',
                          sources=['src/planchon_2001.f90','src/terrain_tools.f90'],
-                         extra_f90_compile_args = ['-fPIC','-lgomp','-Wall','-pedantic','-fopenmp','-O3']
+                         extra_f90_compile_args = ['-fPIC','-Wall','-pedantic','-O3']
                         ),
 
     config.add_extension('upscaling_tools_fortran',
                          sources=['src/upscaling_tools.f90'],
-                         extra_f90_compile_args = ['-fPIC','-lgomp','-Wall','-pedantic','-fopenmp','-O3']
+                         extra_f90_compile_args = ['-fPIC','-Wall','-pedantic','-O3']
+                         #extra_f90_compile_args = ['-O3','-nostartfiles']
                         ),
 
     config.add_subpackage('',subpackage_path='libraries')

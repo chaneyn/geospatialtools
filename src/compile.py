@@ -16,6 +16,7 @@ subroutines = 'calculate_d8_acc \
               calculate_channels \
               calculate_channels_wocean \
               calculate_channels_wocean_wprop \
+              calculate_channels_wocean_wprop_wcrds \
               delineate_basins \
               delineate_hillslopes \
               assign_properties_to_hillslopes \
@@ -33,7 +34,7 @@ subroutines = 'calculate_d8_acc \
               gap_fill_hrus'
 
 #Create library
-cmd = 'f2py -c only: %s : *.o -m terrain_tools_fortran terrain_tools.f90 -lgomp --fcompiler=gnu95 --f90flags="-Wall -pedantic -fopenmp -O3"' % subroutines
+cmd = 'f2py -c only: %s : *.o -m terrain_tools_fortran terrain_tools.f90 -lgomp --fcompiler=gnu95 --f90flags="-Wall -pedantic -fopenmp -O3 -nostartfiles"' % subroutines
 #print cmd
 os.system(cmd)
 
@@ -48,7 +49,7 @@ os.system('rm -rf *.dSYM')
 subroutines = 'time_average'
 
 #Create library
-cmd = 'f2py -c only: %s : -m upscaling_tools_fortran upscaling_tools.f90 -lgomp --fcompiler=gnu95 --f90flags="-w -fopenmp -O3"' % subroutines
+cmd = 'f2py -c only: %s : -m upscaling_tools_fortran upscaling_tools.f90 -lgomp --fcompiler=gnu95 --f90flags="-w -fopenmp -O3 -nostartfiles"' % subroutines
 #print cmd
 os.system(cmd)
 
