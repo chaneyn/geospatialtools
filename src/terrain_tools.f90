@@ -212,7 +212,11 @@ subroutine calculate_d8_acc(dem,mask,res,area,fdir,nx,ny)
     else 
        length = res
     endif
-    slopes(pos) = (demns(i,j) - demns(i+k,j+l))/length
+    if (mask(i+k,j+l) .ne. 0)then
+            slopes(pos) = (demns(i,j) - demns(i+k,j+l))/length
+    else 
+            slopes(pos) = -9999
+    endif
    enddo
    if (maxval(slopes) .gt. 0) then
     tmp = maxloc(slopes)

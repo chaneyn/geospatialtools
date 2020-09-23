@@ -4,6 +4,8 @@ from . import terrain_tools_fortran as ttf
 from . import metrics 
 import sklearn.cluster
 import sklearn.linear_model
+import shapely
+import geopandas
 import scipy.stats
 import scipy.sparse
 import copy
@@ -11,6 +13,174 @@ import time
 import pickle
 import copy
 import numba
+import rasterio
+
+class terrain_analysis:
+
+ def __init__(self,file,mask_file=False):
+ 
+  #Read in the dem
+  self.dem = rasterio.open(file).read(1)
+  self.demns = rasterio.open(file).read(1)
+  #Determine the spatial resolution (assumed to be the same in x and y)
+  self.dx = rasterio.open(file).res[0] #meters
+  #Read in the bound of the data
+  self.bounds = rasterio.open(file).bounds
+  #Create mask
+  if mask_file == False:
+   self.mask = np.ones(self.dem.shape) 
+   self.mask[self.dem == -9999] = 0
+  #Basin area
+  self.basin_area = self.dx**2*np.sum(self.mask)
+
+  return
+
+ def calculate_drainage_area(self,):
+
+  (self.acc,self.fdir) = ttf.calculate_d8_acc(self.demns,self.mask,self.dx)
+
+  return
+  
+ def delineate_river_network(self,):
+
+  #Construct array of x,y
+  x = np.linspace(self.bounds.bottom+self.dx/2,self.bounds.top-self.dx/2,self.acc.shape[0])
+  y = np.linspace(self.bounds.left+self.dx/2,self.bounds.right-self.dx/2,self.acc.shape[1])
+  (xs,ys) = np.meshgrid(x,y)
+  thld = self.channel_threshold
+  (channels,channels_wob,channel_topology,tmp1,crds) = ttf.calculate_channels_wocean_wprop_wcrds(self.acc,thld,thld,self.fdir,self.mask,np.flipud(xs.T),ys.T)
+  #Compute and output the list of the channel positions
+  lst_crds = []
+  for icrd in range(crds.shape[0]):
+    mcrd = crds[icrd,:,0] != -9999
+    if (np.sum(mcrd) == 0):break
+    crds_i = crds[icrd,mcrd,:]
+    if crds_i.shape[0] > 1:
+        lst_crds.append(shapely.geometry.LineString(np.fliplr(crds_i)))
+    else:
+        lst_crds.append(shapely.geometry.Point(np.flipud(crds_i[0,:])))
+  self.channels_vector = geopandas.GeoSeries(lst_crds)
+  self.channels_raster = np.copy(channels_wob)
+  #Calculate the length of each reach
+  self.stream_length = 0
+  for geom in self.channels_vector:
+    self.stream_length += geom.length
+
+  return
+
+ def delineate_basins(self,):
+
+  self.basins = ttf.delineate_basins(self.channels_raster,self.mask,self.fdir)
+
+  return
+
+ def calculate_height_above_nearest_drainage(self,):
+
+  self.hand = ttf.calculate_depth2channel(self.channels_raster,self.basins,self.fdir,self.demns)
+
+  return 
+
+ def discretize_hand(self,):
+
+    ubs = np.unique(self.basins)
+    ubs = ubs[ubs > 0]
+    self.hbands = -9999*np.ones(self.basins.shape).astype(np.int32)
+    hband = 1
+    for ub in ubs:
+        m = self.basins == ub
+        tmp = self.hand[m]
+        #create the bins
+        bins = [0,]
+        while np.max(bins) < np.max(tmp):
+            bins.append(bins[-1]+self.dh)
+        bins = np.array(bins)
+        #Compress the bins
+        if ((bins[-1] - np.max(tmp)) < self.dh) & (bins.size >= 3):
+            bins[-2] = bins[-1]
+            bins = bins[:-1]
+        #assign the cells to a given hru
+        for i in range(bins.size-1):
+            m2 = m & (self.hand >= bins[i]) & (self.hand < bins[i+1])
+            self.hbands[m2] = hband
+            hband += 1
+
+    return
+
+
+def sink_fill(dem,dx):
+
+ return ttf.remove_pits_planchon(dem,dx)
+
+def delineate_river_network(network):
+
+  bounds = network['bounds']
+  acc = network['acc']
+  thld = network['channel_threshold']
+  fdir = network['fdir']
+  mask = network['mask']
+  dx = network['dx']
+  #Construct array of x,y
+  x = np.linspace(bounds.bottom+dx/2,bounds.top-dx/2,acc.shape[0])
+  y = np.linspace(bounds.left+dx/2,bounds.right-dx/2,acc.shape[1])
+  (xs,ys) = np.meshgrid(x,y)
+  (channels,channels_wob,channel_topology,tmp1,crds) = ttf.calculate_channels_wocean_wprop_wcrds(acc,thld,thld,fdir,mask,np.flipud(xs.T),ys.T)
+  #Compute and output the list of the channel positions
+  lst_crds = []
+  for icrd in range(crds.shape[0]):
+    mcrd = crds[icrd,:,0] != -9999
+    if (np.sum(mcrd) == 0):break
+    crds_i = crds[icrd,mcrd,:]
+    if crds_i.shape[0] > 1:
+        lst_crds.append(shapely.geometry.LineString(np.fliplr(crds_i)))
+    else:
+        lst_crds.append(shapely.geometry.Point(np.flipud(crds_i[0,:])))
+  network['channels_vector'] = geopandas.GeoSeries(lst_crds)
+  network['channels_raster'] = np.copy(channels_wob)
+
+  return network
+
+def delineate_basins(channels,fdir,demns,mask=False):
+
+  if mask == False:
+    mask = np.copy(demns)
+    mask[demns == -9999] = 0
+    mask[demns != -9999] = 1
+  basins = ttf.delineate_basins(channels,mask,fdir)
+
+  return basins
+
+def calculate_height_above_nearest_drainage(channels,basins,fdir,dem):
+
+ hand = ttf.calculate_depth2channel(channels,basins,fdir,dem)
+
+ return hand
+
+def discretize_hand(hand,basins,dh):
+
+    hand = np.ma.getdata(hand)
+    ubs = np.unique(basins)
+    ubs = ubs[ubs > 0]
+    hbands = -9999*np.ones(basins.shape).astype(np.int32)
+    hband = 1
+    for ub in ubs:
+        m = basins == ub
+        tmp = hand[m]
+        #create the bins
+        bins = [0,]
+        while np.max(bins) < np.max(tmp):
+            bins.append(bins[-1]+dh)
+        bins = np.array(bins)
+        #Compress the bins
+        if ((bins[-1] - np.max(tmp)) < dh) & (bins.size >= 3):
+            bins[-2] = bins[-1]
+            bins = bins[:-1]
+        #assign the cells to a given hru
+        for i in range(bins.size-1):
+            m2 = m & (hand >= bins[i]) & (hand < bins[i+1])
+            hbands[m2] = hband
+            hband += 1
+
+    return hbands
 
 def calculate_distance(lat0,lat1,lon0,lon1):
 
