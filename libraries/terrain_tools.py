@@ -15,15 +15,37 @@ import copy
 import numba
 import rasterio
 
+def surface_area(phi_a,phi_b,lambda_c,lambda_d):
+    Re = 6371000.0 #m
+    #Convert to radians
+    phi_a = phi_a*np.pi/180.0
+    phi_b = phi_b*np.pi/180.0
+    lambda_c = lambda_c*np.pi/180.0
+    lambda_d = lambda_d*np.pi/180.0
+    #Calculate surface area
+    return Re**2*np.abs(np.sin(phi_a)-np.sin(phi_b))*np.abs(lambda_c - lambda_d)
+
 class terrain_analysis:
 
  def __init__(self,file,mask_file=False):
  
   #Read in the dem
   self.dem = rasterio.open(file).read(1)
-  self.demns = rasterio.open(file).read(1)
+  #self.demns = rasterio.open(file).read(1)
   #Determine the spatial resolution (assumed to be the same in x and y)
-  self.dx = rasterio.open(file).res[0] #meters
+  fp = rasterio.open(file)
+  if fp.crs == 'EPSG:4326': #This is a temporary fix
+   phi_a = fp.bounds.bottom
+   phi_b = fp.bounds.top
+   lambda_c = fp.bounds.left
+   lambda_d = fp.bounds.right
+   area = surface_area(phi_a,phi_b,lambda_c,lambda_d)
+   #Determine the average area per cell
+   area = area/fp.width/fp.height
+   self.dx = area**0.5
+  else:
+   self.dx = rasterio.open(file).res[0] #meters
+  self.res = fp.res
   #Read in the bound of the data
   self.bounds = rasterio.open(file).bounds
   #Create mask
@@ -32,6 +54,16 @@ class terrain_analysis:
    self.mask[self.dem == -9999] = 0
   #Basin area
   self.basin_area = self.dx**2*np.sum(self.mask)
+  #Sink fill
+  self.demns = ttf.remove_pits_planchon(self.dem,self.dx)
+  #Slope and aspect
+  res_array = np.copy(self.dem)
+  res_array[:] = self.dx
+  (slope,aspect) = ttf.calculate_slope_and_aspect(np.flipud(self.dem),res_array,res_array)
+  self.slope = np.flipud(slope)
+  self.aspect = np.flipud(aspect)
+  #QC
+  self.slope[self.slope > 1.0] = 1.0
 
   return
 
@@ -44,8 +76,8 @@ class terrain_analysis:
  def delineate_river_network(self,):
 
   #Construct array of x,y
-  x = np.linspace(self.bounds.bottom+self.dx/2,self.bounds.top-self.dx/2,self.acc.shape[0])
-  y = np.linspace(self.bounds.left+self.dx/2,self.bounds.right-self.dx/2,self.acc.shape[1])
+  x = np.linspace(self.bounds.bottom+self.res[0]/2,self.bounds.top-self.res[0]/2,self.acc.shape[0])
+  y = np.linspace(self.bounds.left+self.res[1]/2,self.bounds.right-self.res[1]/2,self.acc.shape[1])
   (xs,ys) = np.meshgrid(x,y)
   thld = self.channel_threshold
   (channels,channels_wob,channel_topology,tmp1,crds) = ttf.calculate_channels_wocean_wprop_wcrds(self.acc,thld,thld,self.fdir,self.mask,np.flipud(xs.T),ys.T)
@@ -59,18 +91,51 @@ class terrain_analysis:
         lst_crds.append(shapely.geometry.LineString(np.fliplr(crds_i)))
     else:
         lst_crds.append(shapely.geometry.Point(np.flipud(crds_i[0,:])))
+  self.topology = channel_topology
   self.channels_vector = geopandas.GeoSeries(lst_crds)
   self.channels_raster = np.copy(channels_wob)
+  self.shreve_order = tmp1 #This is broken
+  self.reach_length = []
   #Calculate the length of each reach
+  self.channels_vector = self.channels_vector.set_crs("EPSG:4326")
+  self.channels_vector_reproj = self.channels_vector.to_crs("+proj=laea +lon_0=-120.234375 +lat_0=49.5878293 +datum=WGS84 +units=m +no_defs")
   self.stream_length = 0
-  for geom in self.channels_vector:
+  for geom in self.channels_vector_reproj:
     self.stream_length += geom.length
+    self.reach_length.append(geom.length)
+  self.reach_length = np.array(self.reach_length)
+
+  return
+
+ def calculate_reach_properties(self,):
+
+  channels = self.channels_raster
+  topology = self.topology
+  slope = self.slope
+  dx = self.dx
+  mask = self.mask
+  acc = self.acc
+  basins = self.basins
+  shreve_order = self.shreve_order
+  pscaling = {'channel_manning':1,'floodplain_manning':1,'bankfull_depth':1,'channel_width':1}
+
+  #calculate the properties
+  db_channels = calculate_channel_properties(channels,topology,slope,dx,mask,acc,
+          acc,basins,shreve_order,pscaling)
+
+  self.db_channels = db_channels
 
   return
 
  def delineate_basins(self,):
 
   self.basins = ttf.delineate_basins(self.channels_raster,self.mask,self.fdir)
+  ubs = np.unique(self.basins)
+  ubs = ubs[ubs != -9999]
+  area = []
+  for ub in ubs:
+      area.append(self.dx**2*np.sum(self.basins == ub))
+  self.basin_area = np.array(area)
 
   return
 
