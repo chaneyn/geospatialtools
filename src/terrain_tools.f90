@@ -208,7 +208,8 @@ subroutine calculate_d8_acc(dem,mask,res,area,fdir,nx,ny)
       cycle !skip due to on boundary
     endif
     if ((k + l .eq. -2) .or. (k + l .eq. 2) .or. (k + l .eq. 0))then
-        length = 1.41421356237*res
+       !length = 1.41421356237*res
+       length = res
     else 
        length = res
     endif
@@ -225,6 +226,56 @@ subroutine calculate_d8_acc(dem,mask,res,area,fdir,nx,ny)
    else
     fdir(i,j,:) = int(undef)
    endif
+  enddo
+ enddo
+
+ !get the cell count
+ catchment(:,:) = 0
+ do i=1,nx
+  do j=1,ny
+   call neighbr_check_d8(i,j,demns,catchment,fdir,positions,nx,ny,npos)
+  enddo
+ enddo
+
+ !Calculate accumulation area
+ area = res**2*catchment
+
+ !Where the mask is 0 set area to undefined
+ where (mask .eq. 0)
+  area = undef
+ endwhere
+ where (fdir(:,:,1) .eq. -9999)
+  area = undef
+ endwhere
+
+end subroutine
+
+subroutine calculate_d8_acc_pfdir(dem,mask,res,fdir,area,nx,ny)
+
+ !prescribed flow direction
+ implicit none
+ integer,intent(in) :: nx,ny
+ real,intent(in),dimension(nx,ny) :: dem,mask
+ real,intent(in) :: res
+ integer,intent(in),dimension(nx,ny,2) :: fdir
+ real,intent(out),dimension(nx,ny) :: area
+ integer,allocatable,dimension(:,:) :: positions
+ real,allocatable,dimension(:) :: slopes
+ real :: length,undef,demns(nx,ny)
+ integer :: catchment(nx,ny)
+ integer :: i,j,k,l,pos,tmp(1),npos=8
+ allocate(positions(npos,2),slopes(npos))
+ undef = -9999.0
+ demns = dem
+
+ !Construct positions array
+ pos = 0
+ do k=-1,1
+  do l=-1,1
+   if ((k == 0) .and. (l == 0)) cycle
+   pos = pos + 1
+   positions(pos,1) = k
+   positions(pos,2) = l
   enddo
  enddo
 
@@ -378,12 +429,12 @@ recursive subroutine neighbr_check_d8(i,j,dem,catchment,fdir,positions,nx,ny,npo
    inew = i+positions(ipos,1)
    jnew = j+positions(ipos,2)
    if ((inew .lt. 1) .or. (jnew .lt. 1) .or. (inew .gt. nx) .or. (jnew .gt. ny))cycle
-   if (dem(inew,jnew) .gt. dem(i,j))then
+   !if (dem(inew,jnew) .gt. dem(i,j))then
     if ((fdir(inew,jnew,1) .eq. i) .and. (fdir(inew,jnew,2) .eq. j))then
      call neighbr_check_d8(inew,jnew,dem,catchment,fdir,positions,nx,ny,npos)
      catchment(i,j) = catchment(i,j) + catchment(inew,jnew)
     endif
-   endif
+   !endif
   enddo
  endif
     

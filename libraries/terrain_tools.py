@@ -1662,3 +1662,36 @@ def calculate_channel_properties(channels,channel_topology,slope,eares,mask):
                 'width':channel_width,'bankfull':channel_bankfull,'topology':channel_topology}
 
  return copy.deepcopy(db_channels)
+
+def transform_arcgis_fdir(fdir_arcgis):
+    fdir = np.zeros((fdir_arcgis.shape[0],fdir_arcgis.shape[1],2))
+    fdir[:] = -9999
+    for i in range(fdir_arcgis.shape[0]):
+        for j in range(fdir_arcgis.shape[1]):
+            if fdir_arcgis[i,j] == 1:
+                fdir[i,j,0] = i
+                fdir[i,j,1] = j+1
+            if fdir_arcgis[i,j] == 2:
+                fdir[i,j,0] = i+1
+                fdir[i,j,1] = j+1
+            if fdir_arcgis[i,j] == 4:
+                fdir[i,j,0] = i+1
+                fdir[i,j,1] = j
+            if fdir_arcgis[i,j] == 8:
+                fdir[i,j,0] = i+1
+                fdir[i,j,1] = j-1
+            if fdir_arcgis[i,j] == 16:
+                fdir[i,j,0] = i
+                fdir[i,j,1] = j-1
+            if fdir_arcgis[i,j] == 32:
+                fdir[i,j,0] = i-1
+                fdir[i,j,1] = j-1
+            if fdir_arcgis[i,j] == 64:
+                fdir[i,j,0] = i-1
+                fdir[i,j,1] = j
+            if fdir_arcgis[i,j] == 128:
+                fdir[i,j,0] = i-1
+                fdir[i,j,1] = j+1
+    #add one to all indices for fortran indexing
+    fdir[fdir != -9999] += 1
+    return fdir
