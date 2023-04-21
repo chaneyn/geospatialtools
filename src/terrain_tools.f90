@@ -208,7 +208,8 @@ subroutine calculate_d8_acc(dem,mask,res,area,fdir,nx,ny)
       cycle !skip due to on boundary
     endif
     if ((k + l .eq. -2) .or. (k + l .eq. 2) .or. (k + l .eq. 0))then
-        length = 1.41421356237*res
+       !length = 1.41421356237*res
+       length = res
     else 
        length = res
     endif
@@ -253,7 +254,57 @@ subroutine calculate_d8_acc(dem,mask,res,area,fdir,nx,ny)
 
 end subroutine
 
-subroutine calculate_d8_acc_wipoints(dem,mask,ipoints,res,area,fdir,nx,ny)
+subroutine calculate_d8_acc_pfdir(dem,mask,res,fdir,area,nx,ny)
+
+ !prescribed flow direction
+ implicit none
+ integer,intent(in) :: nx,ny
+ real,intent(in),dimension(nx,ny) :: dem,mask
+ real,intent(in) :: res
+ integer,intent(in),dimension(nx,ny,2) :: fdir
+ real,intent(out),dimension(nx,ny) :: area
+ integer,allocatable,dimension(:,:) :: positions
+ real,allocatable,dimension(:) :: slopes
+ real :: length,undef,demns(nx,ny)
+ integer :: catchment(nx,ny)
+ integer :: i,j,k,l,pos,tmp(1),npos=8
+ allocate(positions(npos,2),slopes(npos))
+ undef = -9999.0
+ demns = dem
+
+ !Construct positions array
+ pos = 0
+ do k=-1,1
+  do l=-1,1
+   if ((k == 0) .and. (l == 0)) cycle
+   pos = pos + 1
+   positions(pos,1) = k
+   positions(pos,2) = l
+  enddo
+ enddo
+
+ !get the cell count
+ catchment(:,:) = 0
+ do i=1,nx
+  do j=1,ny
+   call neighbr_check_d8(i,j,demns,catchment,fdir,positions,nx,ny,npos)
+  enddo
+ enddo
+
+ !Calculate accumulation area
+ area = res**2*catchment
+
+ !Where the mask is 0 set area to undefined
+ where (mask .eq. 0)
+  area = undef
+ endwhere
+ where (fdir(:,:,1) .eq. -9999)
+  area = undef
+ endwhere
+
+end subroutine
+
+subroutine calculate_d8_acc_wipoints_pfdir(dem,mask,ipoints,res,fdir,area,nx,ny)
 
  implicit none
  integer,intent(in) :: nx,ny
@@ -261,7 +312,7 @@ subroutine calculate_d8_acc_wipoints(dem,mask,ipoints,res,area,fdir,nx,ny)
  integer,intent(in),dimension(nx,ny) :: ipoints
  real,intent(in) :: res
  real,intent(out),dimension(nx,ny) :: area
- integer,intent(out),dimension(nx,ny,2) :: fdir
+ integer,intent(in),dimension(nx,ny,2) :: fdir
  integer,allocatable,dimension(:,:) :: positions
  real,allocatable,dimension(:) :: slopes
  real :: length,undef,demns(nx,ny)
@@ -279,38 +330,6 @@ subroutine calculate_d8_acc_wipoints(dem,mask,ipoints,res,area,fdir,nx,ny)
    pos = pos + 1
    positions(pos,1) = k
    positions(pos,2) = l
-  enddo
- enddo
-
- !get flow direction map
- do i=1,nx
-  do j=1,ny
-   slopes = -9999.0
-   do pos=1,npos
-    k = positions(pos,1)
-    l = positions(pos,2)
-    if ((i+k .lt. 1) .or. (j+l .lt. 1) .or. (i+k .gt. nx) .or. &
-        (j+l .gt. ny)) then
-      cycle !skip due to on boundary
-    endif
-    if ((k + l .eq. -2) .or. (k + l .eq. 2) .or. (k + l .eq. 0))then
-        length = 1.41421356237*res
-    else 
-       length = res
-    endif
-    slopes(pos) = (demns(i,j) - demns(i+k,j+l))/length
-   enddo
-   if (maxval(slopes) .gt. 0) then
-    tmp = maxloc(slopes)
-    fdir(i,j,1) = i+positions(tmp(1),1)
-    fdir(i,j,2) = j+positions(tmp(1),2)
-   else if(minval(slopes) .eq. -9999.0) then
-    tmp = minloc(slopes)
-    fdir(i,j,1) = i+positions(tmp(1),1)
-    fdir(i,j,2) = j+positions(tmp(1),2)
-   else
-    fdir(i,j,:) = int(undef)
-   endif
   enddo
  enddo
 
@@ -355,12 +374,12 @@ recursive subroutine neighbr_check_d8_wipoints(i,j,dem,catchment,fdir,positions,
    inew = i+positions(ipos,1)
    jnew = j+positions(ipos,2)
    if ((inew .lt. 1) .or. (jnew .lt. 1) .or. (inew .gt. nx) .or. (jnew .gt. ny))cycle
-   if (dem(i,j) .gt. dem(inew,jnew))then
+   !if (dem(i,j) .gt. dem(inew,jnew))then
     if ((fdir(i,j,1) .eq. inew) .and. (fdir(i,j,2) .eq. jnew))then
      call neighbr_check_d8_wipoints(inew,jnew,dem,catchment,fdir,positions,nx,ny,npos,pc)
      !catchment(inew,jnew) = catchment(inew,jnew) + catchment(i,j)
     endif
-   endif
+   !endif
   enddo
  endif
     
@@ -382,12 +401,12 @@ recursive subroutine neighbr_check_d8(i,j,dem,catchment,fdir,positions,nx,ny,npo
    inew = i+positions(ipos,1)
    jnew = j+positions(ipos,2)
    if ((inew .lt. 1) .or. (jnew .lt. 1) .or. (inew .gt. nx) .or. (jnew .gt. ny))cycle
-   if (dem(inew,jnew) .gt. dem(i,j))then
+   !if (dem(inew,jnew) .gt. dem(i,j))then
     if ((fdir(inew,jnew,1) .eq. i) .and. (fdir(inew,jnew,2) .eq. j))then
      call neighbr_check_d8(inew,jnew,dem,catchment,fdir,positions,nx,ny,npos)
      catchment(i,j) = catchment(i,j) + catchment(inew,jnew)
     endif
-   endif
+   !endif
   enddo
  endif
     
@@ -1043,10 +1062,10 @@ subroutine calculate_channels_wocean_wprop_wcrds(area_in,threshold,basin_thresho
  integer,intent(out),dimension(nx,ny) :: channels,channels_wob,shreve_order
  integer,intent(out),dimension(nx*ny) :: channel_topology
  !The dimensions of crds are just for pure convenience
- real,intent(out),dimension(10000,1000,2) :: crds
+ real,intent(out),dimension(100000,1000,2) :: crds
  real,dimension(nx,ny) :: area
  integer,dimension(nx,ny) :: cmask
- integer,dimension(10000) :: crds_count
+ integer,dimension(100000) :: crds_count
  integer,dimension(2) :: placement
  integer,dimension(:,:),allocatable :: positions
  integer :: i,j,pos,cid,k,l,npos,imin,imax,jmin,jmax,hcid
@@ -1167,12 +1186,13 @@ recursive subroutine channels_upstream_wprop_wcrds(i,j,fdir,channels,positions,n
  integer,intent(in) :: positions(npos,2),fdir(nx,ny,2)
  real,intent(in) :: basin_threshold,area(nx,ny)
  integer,intent(inout) :: cid,channels(nx,ny),mask(nx,ny),hcid,channel_topology(nx*ny)
- integer,intent(inout) :: shreve_order(nx,ny),crds_count(10000)
+ integer,intent(inout) :: shreve_order(nx,ny),crds_count(100000)
  real,intent(in) :: lats(nx,ny),lons(nx,ny)
- real,intent(inout) :: crds(10000,1000,2)
+ real,intent(inout) :: crds(100000,1000,2)
  integer :: inew,jnew,count,ipos,cid_org
  !Memorize the channel id
  cid_org = cid
+ !print*,cid,crds_count(cid)
 
  !Memorize the coordinates
  crds(cid,crds_count(cid),1) = lats(i,j)
@@ -1880,8 +1900,8 @@ subroutine calculate_depth2channel(channels,mask,fdir,dem,depth2channel,nx,ny)
  depth2channel = dem - channeldepth
 
  !Set any channel depths below 0 to 0 (This is a hack)
- where (depth2channel .lt. 0) 
-  depth2channel = undef
+ where (depth2channel .lt. 0.0)
+  depth2channel = 0.0
  endwhere
 
  !Set all values that are outside of the mask to undef

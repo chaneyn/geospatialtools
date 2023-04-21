@@ -4,8 +4,8 @@ from . import terrain_tools_fortran as ttf
 from . import metrics 
 import sklearn.cluster
 import sklearn.linear_model
-import shapely
-import geopandas
+#import shapely
+#import geopandas
 import scipy.stats
 import scipy.sparse
 import copy
@@ -1894,21 +1894,21 @@ def compute_polygon_info(polygons,clusters,res):
 
  return db
 
-def calculate_channel_properties(channels,channel_topology,slope,eares,mask,area_all,area_all_cp,basins,shreve_order_map,pscaling):
+def calculate_channel_properties(channels,channel_topology,slope,eares,mask,area_all,area_all_cp,basins,pscaling):
 
  #Compute channel properties
- (channel_slope,channel_length,channel_mannings,channel_width,channel_bankfull,channel_topology,channel_area,reach_area,shreve_order,floodplain_mannings) = calculate_channel_properties_workhorse(channels,channel_topology,slope,eares,mask,area_all,area_all_cp,basins,shreve_order_map,pscaling['channel_manning'],pscaling['floodplain_manning'],pscaling['bankfull_depth'],pscaling['channel_width'])
+ (channel_slope,channel_length,channel_mannings,channel_width,channel_bankfull,channel_topology,channel_area,reach_area,floodplain_mannings) = calculate_channel_properties_workhorse(channels,channel_topology,slope,eares,mask,area_all,area_all_cp,basins,pscaling['channel_manning'],pscaling['floodplain_manning'],pscaling['bankfull_depth'],pscaling['channel_width'])
 
  #Assemble final database
  db_channels = {'slope':channel_slope,'length':channel_length,'manning_channel':channel_mannings,
                 'width':channel_width,'bankfull':channel_bankfull,'topology':channel_topology,
                 'acc':channel_area,'area':reach_area,
-                'shreve_order':shreve_order,'manning_floodplain':floodplain_mannings}
+                'manning_floodplain':floodplain_mannings}
 
  return copy.deepcopy(db_channels)
 
 @numba.jit(nopython=True,cache=True)
-def calculate_channel_properties_workhorse(channels,channel_topology,slope,eares,mask,area_all,area_all_cp,basins,shreve_order_map,m_c_n,m_fp_n,m_bd,m_cw):
+def calculate_channel_properties_workhorse(channels,channel_topology,slope,eares,mask,area_all,area_all_cp,basins,m_c_n,m_fp_n,m_bd,m_cw):
 
  #Convert to 0-index
  channel_topology[channel_topology > 0] = channel_topology[channel_topology > 0] - 1
@@ -1920,7 +1920,6 @@ def calculate_channel_properties_workhorse(channels,channel_topology,slope,eares
  channel_area = np.zeros(nc)
  channel_area_cp = np.zeros(nc)
  reach_area = np.zeros(nc)
- shreve_order = np.zeros(nc)
  count = np.zeros(nc)
  for i in range(channels.shape[0]):
   for j in range(channels.shape[1]):
@@ -1934,7 +1933,6 @@ def calculate_channel_properties_workhorse(channels,channel_topology,slope,eares
    if area_all[i,j] > channel_area[channel-1]:channel_area[channel-1] = area_all[i,j]
    if area_all_cp[i,j] > channel_area_cp[channel-1]:channel_area_cp[channel-1] = area_all_cp[i,j]
    count[channel-1] += 1
-   shreve_order[channel-1] = shreve_order_map[i,j]
 
  #Compute averages
  channel_slope = channel_slope/count
@@ -1944,15 +1942,18 @@ def calculate_channel_properties_workhorse(channels,channel_topology,slope,eares
  floodplain_mannings = m_fp_n*0.15*np.ones(nc) #Assume natural gravel stream bed
  #Compute bankfull width and height (only applicable for United States ();
  channel_width = m_cw*2.70*(channel_area_cp*10**-6)**0.352#30.0*np.ones(nc) #meter
+ #channel_width[channel_width > 50] = 50 #NWC -> hack to make sure model works (03/31/23)
+ #channel_width = 90*np.ones(nc) #meter
  tmp = reach_area/channel_length
  channel_width[channel_width > tmp] = tmp[channel_width > tmp]
  channel_bankfull = m_bd*0.30*(channel_area_cp*10**-6)**0.213#1.0*np.ones(nc) #meter
+ #channel_bankfull = 1.0*np.ones(nc) #meter
  #Compute bankfull width and height (only applicable for Atlantic Plain of US)
  #channel_width = 2.22*(channel_area*10**-6)**0.363#30.0*np.ones(nc) #meter
  #channel_bankfull = 0.24*(channel_area*10**-6)**0.323#1.0*np.ones(nc) #meter
 
  return (channel_slope,channel_length,channel_mannings,
-         channel_width,channel_bankfull,channel_topology,channel_area,reach_area,shreve_order,
+         channel_width,channel_bankfull,channel_topology,channel_area,reach_area,
          floodplain_mannings)
 
 def calculate_inlets_oulets(channels_wob,fdir,area,mask,lats,lons,mask_all,area_all):
@@ -1990,7 +1991,8 @@ def calculate_inlets_oulets_workhorse(channels_wob,fdir,area,mask,lats,lons,mask
     jnew = j+positions[ipos,1]
     if ((inew < 0) | (jnew < 0) | (inew >= channels_wob.shape[0]) | (jnew >= channels_wob.shape[1])):continue
     if ((fdir[inew,jnew,0] == i+1) & (fdir[inew,jnew,1] == j+1)) & (mask[inew,jnew] == False):
-     if ((area[inew,jnew] > 10**4) & (mask_all[inew,jnew] != -9999)):
+     #if ((area[inew,jnew] > 10**4) & (mask_all[inew,jnew] != -9999)):
+     if ((area[inew,jnew] > 10**5) & (mask_all[inew,jnew] != -9999)):
       i_inlet += 1
       #Determine origin and destination grid id, lat, and lon
       inlet_org[i_inlet,0] = mask_all[inew,jnew]
@@ -2007,18 +2009,22 @@ def calculate_inlets_oulets_workhorse(channels_wob,fdir,area,mask,lats,lons,mask
    inew = fdir[i,j,0]-1
    jnew = fdir[i,j,1]-1
    if ((area[inew,jnew] > 10**4) & (mask[inew,jnew] == False) & (mask_all[inew,jnew] != -9999)):
-    i_outlet += 1
-    #Determine origin and destination grid id, lat, and lon
-    outlet_dst[i_outlet,0] = mask_all[inew,jnew]
-    outlet_dst[i_outlet,1] = lats[inew,jnew]
-    outlet_dst[i_outlet,2] = lons[inew,jnew]
-    outlet_dst[i_outlet,3] = -9999
-    outlet_dst[i_outlet,4] = area_all[inew,jnew]
-    outlet_org[i_outlet,0] = mask_all[i,j]
-    outlet_org[i_outlet,1] = lats[i,j]
-    outlet_org[i_outlet,2] = lons[i,j]
-    outlet_org[i_outlet,3] = channels_wob[i,j]-1
-    outlet_org[i_outlet,4] = area_all[i,j]
+      #print(inew,jnew,inew.dtype,jnew.dtype,area.dtype)
+      #if (area[inew,jnew] > 10**5):
+      # if (mask[inew,jnew] == False):
+      #  if (mask_all[inew,jnew] != -9999):
+      i_outlet += 1
+      #Determine origin and destination grid id, lat, and lon
+      outlet_dst[i_outlet,0] = mask_all[inew,jnew]
+      outlet_dst[i_outlet,1] = lats[inew,jnew]
+      outlet_dst[i_outlet,2] = lons[inew,jnew]
+      outlet_dst[i_outlet,3] = -9999
+      outlet_dst[i_outlet,4] = area_all[inew,jnew]
+      outlet_org[i_outlet,0] = mask_all[i,j]
+      outlet_org[i_outlet,1] = lats[i,j]
+      outlet_org[i_outlet,2] = lons[i,j]
+      outlet_org[i_outlet,3] = channels_wob[i,j]-1
+      outlet_org[i_outlet,4] = area_all[i,j]
 
  inlet_dst = inlet_dst[0:i_inlet+1,:]
  inlet_org = inlet_org[0:i_inlet+1,:]
@@ -2119,13 +2125,6 @@ def determine_band_hand(nhand,band_position,basin_clusters,band_correction):
             bp = band_position[i,j]
             if nhand[i,j] < vals[bc,bp]:
              vals[bc,bp] = nhand[i,j]
-            #vals[bc,bp] += nhand[i,j]
-            #counts[bc,bp] += 1
-    #1.5 Compute the means
-    #for i in range(vals.shape[0]):
-    #    for j in range(vals.shape[1]):
-    #        if counts[i,j] > 0:
-    #            vals[i,j]= vals[i,j]/counts[i,j]
     ##2.0 Place the means
     #2.0 Place the mins
     band_nhand = np.copy(nhand)
@@ -2238,14 +2237,21 @@ def cdf_match_hand_values(hand,basins,basin_clusters):
         vals2 = np.copy(vals1)
         vals2[argsort] = np.interp(pcts1[argsort],pcts,vals)
         nhand[m1] = vals2[:] 
+        '''if np.max(nhand[m1] > 1000):
+         print(pcts1[argsort])
+         print(vals1)
+         print(vals2)
+         print(vals)
+         exit()'''
     
  return nhand
 
 def create_basin_tiles_updated(basin_clusters,hand,basins,n_binning,max_nbins=100):
     
-    #Assemble normalized hand and maxhand data
-    #(nhand,maxhand) = normalize_hand_values(hand,basins)
+    #print('before',max(np.unique(hand)))
     nhand = cdf_match_hand_values(hand,basins,basin_clusters)
+    #print('after',max(np.unique(nhand)))
+    nhand = np.copy(hand)
     
     #Compute the bin edges
     ubcs = np.unique(basin_clusters).astype(np.int32)
@@ -2282,42 +2288,6 @@ def create_basin_tiles_updated(basin_clusters,hand,basins,n_binning,max_nbins=10
         tmp[-1] = np.max(data)
         #Place the data
         bin_edges[ubc-1,:tmp.size+1] = np.concatenate((np.array([0.0,]),tmp))
-        #tmp = np.cumsum(0.05*np.exp(np.arange(max_nbins)/1))
-        #tmp = np.cumsum(0.25*np.exp(np.arange(max_nbins)))
-        #tmp = np.cumsum(0.1*np.exp(np.arange(max_nbins)))
-        #Add another bin edge to ensure the channel (hand = 0) is explicitly represented
-        #if tmp[-1] < np.max(data):
-        #    bin_edges[ubc-1,:max_nbins+3] = np.concatenate(((np.array([0.0,0.0]),tmp,np.array([np.max(data),]))))
-        #else:
-        #    bin_edges[ubc-1,:max_nbins+2] = np.concatenate((np.array([0.0,0.0]),tmp))
-        #curate
-        #data[data == -9999] = np.max(data[data != -9999])
-        #hand[m & (hand == -9999)] = np.max(hand[m & (hand != -9999)])
-        #compute number of bins
-        #nbins = int(np.ceil(np.max(data)/dh))
-        #Split based on percentiles and not the actual values ("areal" approach)
-        #Compute the percentiles of the hand values
-        '''m1 = nhand[m]!=0
-        data1 = nhand[m][m1]
-        argsort = np.argsort(data1)
-        pcts = np.copy(data1)
-        pcts[argsort] = np.linspace(0,1,data1.size)
-        #Compute the edges (this is for the area)
-        pedges = 2.0
-        tmp1 = np.linspace(0.0,1.0**(1.0/float(pedges)),nbins+1)**pedges
-        #Find the closes matches in the pcts
-        tmp = np.copy(tmp1)
-        tmp[:] = -9999
-        for i in range(nbins+1):
-          if i == 0:tmp[i] = 0.0
-          else:
-            argmin = np.argmin(np.abs(tmp1[i] - pcts))
-            tmp[i] = nhand[m][m1][argmin]'''
-        #Compute the edges (Old absolute approach)
-        #pedges = 2.0
-        #tmp= np.linspace(0.0,1.0**(1.0/float(pedges)),nbins+1)**pedges
-        #Add another bin edge to ensure the channel (hand = 0) is explicitly represented
-        #bin_edges[ubc-1,:nbins+2] = np.concatenate((np.array([0.0,]),tmp))
     
     #Determine band position
     band_position = determine_band_position(nhand,bin_edges,basin_clusters)
@@ -2331,12 +2301,43 @@ def create_basin_tiles_updated(basin_clusters,hand,basins,n_binning,max_nbins=10
     #Compute band id
     band_id = determine_band_id(band_position2,basin_clusters)
     
-    #2.Compute basin cluster average max hand and scale up the new hand values
-    #ubcs = np.unique(basin_clusters)
-    #ubcs = ubcs[ubcs != -9999]
-    #for ubc in ubcs:
-    #    m = basin_clusters == ubc
-    #    #val = np.mean(maxhand[m])
-    #    band_nhand[m] = val*band_nhand[m]
-    
     return (band_id,band_nhand,band_position)
+
+@numba.jit(nopython=True,cache=True)
+def transform_arcgis_fdir(fdir_arcgis):
+    fdir = np.zeros((fdir_arcgis.shape[0],fdir_arcgis.shape[1],2)).astype(np.int32)
+    fdir[:] = -9999
+    for i in range(fdir_arcgis.shape[0]):
+        for j in range(fdir_arcgis.shape[1]):
+            if fdir_arcgis[i,j] == 1:
+                fdir[i,j,0] = i
+                fdir[i,j,1] = j+1
+            if fdir_arcgis[i,j] == 2:
+                fdir[i,j,0] = i+1
+                fdir[i,j,1] = j+1
+            if fdir_arcgis[i,j] == 4:
+                fdir[i,j,0] = i+1
+                fdir[i,j,1] = j
+            if fdir_arcgis[i,j] == 8:
+                fdir[i,j,0] = i+1
+                fdir[i,j,1] = j-1
+            if fdir_arcgis[i,j] == 16:
+                fdir[i,j,0] = i
+                fdir[i,j,1] = j-1
+            if fdir_arcgis[i,j] == 32:
+                fdir[i,j,0] = i-1
+                fdir[i,j,1] = j-1
+            if fdir_arcgis[i,j] == 64:
+                fdir[i,j,0] = i-1
+                fdir[i,j,1] = j
+            if fdir_arcgis[i,j] == 128:
+                fdir[i,j,0] = i-1
+                fdir[i,j,1] = j+1
+    #add one to all indices for fortran indexing
+    for i in range(fdir_arcgis.shape[0]):
+        for j in range(fdir_arcgis.shape[1]):
+            if fdir[i,j,0] != -9999:
+                fdir[i,j,0] = fdir[i,j,0] + 1
+                fdir[i,j,1] = fdir[i,j,1] + 1
+
+    return fdir

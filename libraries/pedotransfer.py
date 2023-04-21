@@ -1,4 +1,5 @@
 import numpy as np
+import numba
 
 def Lambda_Maidment92(phi,clay,sand):
 
@@ -143,3 +144,64 @@ def Run_Tests():
  print 10*Psisat_Saxton2006(clay,sand,om)/100 #m'''
 
  return
+
+@numba.jit(nopython=True,cache=True)
+def soiltexturalclass_usda(sand,clay):
+    """Function that returns the USDA 
+    soil textural class given 
+    the percent sand and clay.
+    
+    Inputs = Percetnage of sand and clay
+    """
+    
+    silt = 100 - sand - clay
+    
+    if silt + 1.5*clay < 15:
+        textural_class = 1#'sand'
+
+    elif silt + 1.5*clay >= 15 and silt + 2*clay < 30:
+        textural_class = 2#'loamy sand'
+
+    elif (clay >= 7 and clay < 20 and sand > 52 and silt + 2*clay >= 30) or (clay < 7 and silt < 50 and silt + 2*clay >= 30):
+        textural_class = 3#'sandy loam'
+
+    elif clay >= 7 and clay < 27 and silt >= 28 and silt < 50 and sand <= 52:
+        textural_class = 6#'loam'
+
+    elif (silt >= 50 and clay >= 12 and clay < 27) or (silt >= 50 and silt < 80 and clay < 12):
+        textural_class = 4#'silt loam'
+
+    elif silt >= 80 and clay < 12:
+        textural_class = 5#'silt'
+
+    elif clay >= 20 and clay < 35 and silt < 28 and sand > 45:
+        textural_class = 7#'sandy clay loam'
+
+    elif clay >= 27 and clay < 40 and sand > 20 and sand <= 45:
+        textural_class = 9#'clay loam'
+
+    elif clay >= 27 and clay < 40 and sand <= 20:
+        textural_class = 8#'silty clay loam'
+
+    elif clay >= 35 and sand > 45:
+        textural_class = 10#'sandy clay'
+
+    elif clay >= 40 and silt >= 40:
+        textural_class = 11#'silty clay'
+
+    elif clay >= 40 and sand <= 45 and silt < 40:
+        textural_class = 12#'clay'
+
+    else:
+        textural_class = -9999#'na'
+
+    return textural_class
+
+@numba.jit(nopython=True,cache=True)
+def compute_soil_texture_class(sand,clay):
+    texture_class = np.zeros(sand.size)
+    texture_class[:] = -9999
+    for i in range(sand.size):
+    	if (sand[i] == -9999) | (clay[i] == -9999):continue
+    	texture_class[i] = soiltexturalclass_usda(sand[i],clay[i])
+    return texture_class
