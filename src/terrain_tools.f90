@@ -1051,24 +1051,37 @@ recursive subroutine channels_upstream_wprop(i,j,fdir,channels,positions,nx,ny,c
 
 end subroutine
 
-subroutine calculate_channels_wocean_wprop_wcrds(area_in,threshold,basin_threshold,fdir,mask,lats,lons,channels,&
-                                           channels_wob,channel_topology,shreve_order,crds,nx,ny)
+subroutine calculate_channels_wocean_wprop_wcrds(area_in,area_all_in,threshold,&
+                basin_threshold,fdir,mask,mask_all,lats,lons,channels,channels_wob,&
+                channel_topology,shreve_order,crds,channel_outlet_id,&
+                channel_outlet_target_nmp,channel_outlet_target_crds,&
+                channel_inlet_id,channel_inlet_target_nmp,&
+                channel_inlet_target_crds,nx,ny)
 
  implicit none
  integer,intent(in) :: nx,ny
  real,intent(in) :: threshold,basin_threshold
- real,intent(in),dimension(nx,ny) :: area_in,mask,lats,lons
+ real,intent(in),dimension(nx,ny) :: area_in,area_all_in,mask
+ real*8,intent(in),dimension(nx,ny) :: lats,lons
+ integer,intent(in),dimension(nx,ny) :: mask_all
  integer,intent(in),dimension(nx,ny,2) :: fdir
  integer,intent(out),dimension(nx,ny) :: channels,channels_wob,shreve_order
  integer,intent(out),dimension(nx*ny) :: channel_topology
+ integer,intent(out),dimension(nx*ny) :: channel_outlet_id,channel_outlet_target_nmp
+ real*8,intent(out),dimension(nx*ny,2) :: channel_outlet_target_crds
+ integer,intent(out),dimension(nx*ny) :: channel_inlet_id
+ integer,intent(out),dimension(nx*ny,4) :: channel_inlet_target_nmp
+ real*8,intent(out),dimension(nx*ny,4,2) :: channel_inlet_target_crds
  !The dimensions of crds are just for pure convenience
- real,intent(out),dimension(100000,1000,2) :: crds
- real,dimension(nx,ny) :: area
+ real*8,intent(out),dimension(100000,1000,2) :: crds
+ !integer,dimension(nx*ny) :: channel_outlet_id,channel_outlet_target_nmp
+ !integer,dimension(nx*ny,2) :: channel_outlet_target_crds
+ real,dimension(nx,ny) :: area,area_all
  integer,dimension(nx,ny) :: cmask
  integer,dimension(100000) :: crds_count
  integer,dimension(2) :: placement
  integer,dimension(:,:),allocatable :: positions
- integer :: i,j,pos,cid,k,l,npos,imin,imax,jmin,jmax,hcid
+ integer :: i,j,pos,cid,k,l,npos,imin,imax,jmin,jmax,hcid,inew,jnew
  logical :: bool
  real :: undef
  undef = -9999.0
@@ -1076,6 +1089,7 @@ subroutine calculate_channels_wocean_wprop_wcrds(area_in,threshold,basin_thresho
  allocate(positions(npos,2))
  !Copy the area array
  area = area_in
+ area_all = area_all_in
  !Initialize channels 
  channels = 0
  !Initialize channel topology
@@ -1128,15 +1142,34 @@ subroutine calculate_channels_wocean_wprop_wcrds(area_in,threshold,basin_thresho
   !Set the channel id
   if ((cmask(i,j) .eq. 1) .and. (area(i,j) .ge. basin_threshold))then
    channels(i,j) = cid
+   !Memorize the coordinates (of the downstream reach; this creates the link)
+   crds(cid,crds_count(cid),1) = lats(i,j)
+   crds(cid,crds_count(cid),2) = lons(i,j)
    !Define outlet beyond catchment
    channel_topology(cid) = -1
   endif
   cmask(i,j) = 0
 
+  !Find the pixel downstream (outside of the macroscale polygon) that it flows
+  !into
+  do pos=1,npos
+   inew = i+positions(pos,1)
+   jnew = j+positions(pos,2)
+   if ((inew .lt. 1) .or. (jnew .lt. 1) .or. (inew .gt. nx) .or. (jnew .gt.ny))cycle
+   if ((fdir(i,j,1) .eq. inew) .and. (fdir(i,j,2) .eq. jnew))then
+    channel_outlet_id(cid) = cid
+    channel_outlet_target_crds(cid,1) = lats(inew,jnew)
+    channel_outlet_target_crds(cid,2) = lons(inew,jnew)
+    channel_outlet_target_nmp(cid) = mask_all(inew,jnew)
+   endif
+  enddo
+
   !Go upstream
   call channels_upstream_wprop_wcrds(i,j,fdir,channels,positions,nx,ny,cid,npos,&
                          cmask,basin_threshold,area,hcid,channel_topology,&
-                         shreve_order,lats,lons,crds,crds_count)
+                         shreve_order,lats,lons,crds,crds_count,&
+                         mask_all,area_all,channel_inlet_id,channel_inlet_target_nmp,&
+                         channel_inlet_target_crds)
 
  enddo
  
@@ -1179,20 +1212,28 @@ end subroutine
 
 recursive subroutine channels_upstream_wprop_wcrds(i,j,fdir,channels,positions,nx,ny,cid,npos,&
                              mask,basin_threshold,area,hcid,channel_topology,shreve_order,&
-                             lats,lons,crds,crds_count)
+                             lats,lons,crds,crds_count,mask_all,area_all,&
+                             channel_inlet_id,channel_inlet_target_nmp,&
+                             channel_inlet_target_crds)
 
  implicit none
  integer,intent(in) :: npos,i,j,nx,ny
  integer,intent(in) :: positions(npos,2),fdir(nx,ny,2)
- real,intent(in) :: basin_threshold,area(nx,ny)
+ real,intent(in) :: basin_threshold,area(nx,ny),area_all(nx,ny)
  integer,intent(inout) :: cid,channels(nx,ny),mask(nx,ny),hcid,channel_topology(nx*ny)
+ integer,intent(in) :: mask_all(nx,ny)
  integer,intent(inout) :: shreve_order(nx,ny),crds_count(100000)
- real,intent(in) :: lats(nx,ny),lons(nx,ny)
- real,intent(inout) :: crds(100000,1000,2)
- integer :: inew,jnew,count,ipos,cid_org
+ real*8,intent(in) :: lats(nx,ny),lons(nx,ny)
+ real*8,intent(inout) :: crds(100000,1000,2)
+ integer,intent(inout),dimension(nx*ny) :: channel_inlet_id
+ integer,intent(inout),dimension(nx*ny,4) :: channel_inlet_target_nmp
+ real*8,intent(inout),dimension(nx*ny,4,2) :: channel_inlet_target_crds
+ integer :: inew,jnew,count,ipos,cid_org,count_inlets
  !Memorize the channel id
  cid_org = cid
- !print*,cid,crds_count(cid)
+ 
+ !Initialize count_inlets
+ count_inlets = 0
 
  !Memorize the coordinates
  crds(cid,crds_count(cid),1) = lats(i,j)
@@ -1207,9 +1248,15 @@ recursive subroutine channels_upstream_wprop_wcrds(i,j,fdir,channels,positions,n
   jnew = j+positions(ipos,2)
   if ((inew .lt. 1) .or. (jnew .lt. 1) .or. (inew .gt. nx) .or. (jnew .gt.ny))cycle
   if ((fdir(inew,jnew,1) .eq. i) .and. (fdir(inew,jnew,2) .eq. j))then
-   if (mask(inew,jnew) .eq. 1) then
+   !if (mask(inew,jnew) .eq. 1) then
+   ! !Make sure we are above the threshold
+   ! if (area(inew,jnew) .ge. basin_threshold) then
+   !  count = count + 1
+   ! endif
+   !Use mask_all to handle the cross-boundary cases to ensure appropriate channel splits
+   if (mask_all(inew,jnew) .ne. -9999) then
     !Make sure we are above the threshold
-    if (area(inew,jnew) .ge. basin_threshold) then
+    if (area_all(inew,jnew) .ge. basin_threshold) then
      count = count + 1
     endif
    endif
@@ -1230,10 +1277,21 @@ recursive subroutine channels_upstream_wprop_wcrds(i,j,fdir,channels,positions,n
     if (mask(inew,jnew) .eq. 1) then
      mask(inew,jnew) = 0
      channels(inew,jnew) = channels(i,j)
+     !Memorize the coordinates (of the downstream reach; this creates the link)
+     crds(cid,crds_count(cid),1) = lats(inew,jnew)
+     crds(cid,crds_count(cid),2) = lons(inew,jnew)
      call channels_upstream_wprop_wcrds(inew,jnew,fdir,channels,positions,nx,ny,&
                              cid,npos,mask,basin_threshold,area,hcid,&
-                             channel_topology,shreve_order,lats,lons,crds,crds_count)
+                             channel_topology,shreve_order,lats,lons,crds,crds_count,&
+                             mask_all,area_all,channel_inlet_id,channel_inlet_target_nmp,&
+                             channel_inlet_target_crds)
      shreve_order(i,j) = shreve_order(inew,jnew)
+    else if ((mask_all(inew,jnew) .ne. mask_all(i,j)) .and. (mask_all(inew,jnew) .ne. -9999))then
+     count_inlets = count_inlets + 1
+     channel_inlet_id(cid) = channels(i,j)
+     channel_inlet_target_nmp(cid,count_inlets) = mask_all(inew,jnew)
+     channel_inlet_target_crds(cid,count_inlets,1) = lats(inew,jnew)
+     channel_inlet_target_crds(cid,count_inlets,2) = lons(inew,jnew)
     endif
    endif
   enddo
@@ -1253,22 +1311,35 @@ recursive subroutine channels_upstream_wprop_wcrds(i,j,fdir,channels,positions,n
       channels(inew,jnew) = cid
       channel_topology(cid) = cid_org !Define channel topology
       !Memorize the coordinates (of the downstream reach; this creates the link)
-      crds(cid,crds_count(cid),1) = lats(i,j)
-      crds(cid,crds_count(cid),2) = lons(i,j)
+      crds(cid,crds_count(cid),1) = lats(inew,jnew)
+      crds(cid,crds_count(cid),2) = lons(inew,jnew)
       !Update the position of the last coordinate
       crds_count(cid) =  crds_count(cid) + 1
       call channels_upstream_wprop_wcrds(inew,jnew,fdir,channels,positions,nx,ny,&
                              cid,npos,mask,basin_threshold,area,hcid,&
-                             channel_topology,shreve_order,lats,lons,crds,crds_count)
+                             channel_topology,shreve_order,lats,lons,crds,crds_count,&
+                             mask_all,area_all,channel_inlet_id,channel_inlet_target_nmp,&
+                             channel_inlet_target_crds)
       shreve_order(i,j) = shreve_order(i,j) + shreve_order(inew,jnew) !Add upstream shreve order to current reach
      else
       mask(inew,jnew) = 0
       channels(inew,jnew) = cid_org
+      !Memorize the coordinates (of the downstream reach; this creates the link)
+      crds(cid,crds_count(cid),1) = lats(inew,jnew)
+      crds(cid,crds_count(cid),2) = lons(inew,jnew)
       call channels_upstream_wprop_wcrds(inew,jnew,fdir,channels,positions,nx,ny,&
                              cid_org,npos,mask,basin_threshold,area,hcid,&
-                             channel_topology,shreve_order,lats,lons,crds,crds_count)
+                             channel_topology,shreve_order,lats,lons,crds,crds_count,&
+                             mask_all,area_all,channel_inlet_id,channel_inlet_target_nmp,&
+                             channel_inlet_target_crds)
       shreve_order(i,j) = shreve_order(inew,jnew)
      endif
+    else if ((mask_all(inew,jnew) .ne. mask_all(i,j)) .and. (mask_all(inew,jnew) .ne. -9999))then
+     count_inlets = count_inlets + 1
+     channel_inlet_id(cid) = channels(i,j)
+     channel_inlet_target_nmp(cid,count_inlets) = mask_all(inew,jnew)
+     channel_inlet_target_crds(cid,count_inlets,1) = lats(inew,jnew)
+     channel_inlet_target_crds(cid,count_inlets,2) = lons(inew,jnew)
     endif
    endif
   enddo

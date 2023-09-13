@@ -309,7 +309,6 @@ def normalize_variable(input,min,max):
  return data
 
 def cluster_data(X,nc):
-
  #Assemble sample list`
  minsamples = 10**5
  if X.shape[0] > minsamples:
@@ -325,8 +324,19 @@ def cluster_data(X,nc):
  #Cluster the data
  if nc > 1:
   nfeatures = X.shape[1]
-  #model = sklearn.cluster.MiniBatchKMeans(n_clusters=nc,random_state=35799)
-  model = sklearn.cluster.KMeans(n_clusters=nc,random_state=35799,init='k-means++')
+  ##laura: Initialize centroids
+  centroids=np.empty([nc,nfeatures]) #laura
+  max=np.max(X,axis=0) #laura
+  min=np.min(X,axis=0) #laura
+  rng=max-min #laura
+  centroids[0,:]=min #laura
+  centroids[-1,:]=max #laura
+  delta=rng/(nc-1) #laura
+  for c in range(1,centroids.shape[0]-1): #laura
+   centroids[c,:]=min+c*delta #laura
+   #model = sklearn.cluster.MiniBatchKMeans(n_clusters=nc,random_state=35799)
+   #model = sklearn.cluster.KMeans(n_clusters=nc,random_state=35799,init='k-means++') #laura, commented out
+  model = sklearn.cluster.KMeans(n_clusters=nc,init=centroids)
   #model = KMeans(nc)
   #model.compute(X)
   #exit()
@@ -1270,11 +1280,11 @@ def create_basin_tiles(basin_clusters,hand,basins,dh):
 
  return (tiles,new_hand,tiles_position)
 
-def create_hrus_hydroblocks(hillslopes,htiles,covariates,nclusters):
-
+def create_hrus_hydroblocks(hillslopes,htiles,covariates,nclusters,cid):#laura, add cid and flag_fd
  #Compute optimal number of clusters flag
  flag = False
-
+ import sys
+ 
  #Curate the covariates
  for var in covariates: 
   val = np.mean(covariates[var]['d'][covariates[var]['d'] != -9999])
@@ -1291,14 +1301,18 @@ def create_hrus_hydroblocks(hillslopes,htiles,covariates,nclusters):
   uts = np.unique(htiles[mh])
   #Determine fractional coverage of each height band
   fct = []
+  numb_pix=[] #laura, FD
   for ut in uts:
    fct.append(np.sum(htiles == ut)/np.sum(mh))
+   numb_pix.append(np.sum(htiles == ut))#number of pixesl per height band laura
   fct = np.array(fct)
+  numb_pix = np.array(numb_pix)#laura
   #Use fractions to determine the number of clusters
   tnc = np.ceil(uts.size*nclusters*fct).astype(np.int32)
   #Ensure the average number of clusters is consistent with the defined parameter
   while np.mean(tnc) > nclusters:
-    tnc[np.argmax(tnc)] = tnc[np.argmax(tnc)] - 1
+   tnc[np.argmax(tnc)] = tnc[np.argmax(tnc)] - 1
+  
   #Process each tile
   for it in range(uts.size):#ut in uts:
    ut = uts[it]
@@ -1314,12 +1328,36 @@ def create_hrus_hydroblocks(hillslopes,htiles,covariates,nclusters):
     (nc,ws) = compute_cluster_parameters(ccp,maxnc)
    else:
     nc = tnc[it]#nclusters
-    #print(uh,ut,nc)
     ws = np.ones(len(ccp.keys()))
    #print 'hillslope: %d, tile: %d, nc: %d' % (uh,ut,nc)
    #Add weights to covariates
+   ##laura: Add weights to covariates so land cover does not overwhem clustering
+   geo=0 #laura
+   soil=0 #laura
+   lc=0 #laura
+   other=0 #laura
    for var in covariates:
-    covariates[var]['w'] = ws[list(ccp).index(var)]
+    if var in ['lats','lons']: #laura
+     geo+=1 #laura
+    elif var in ['clay','sand','silt','BB','DRYSMC','MAXSMC','REFSMC','SATPSI','SATDK','SATDW','WLTSMC','QTZ']: #laura
+     soil+=1 #laura
+    elif var in ['lc_w_now','lc_urb_nourb','lc_grass_forest','ndvi']: #laura
+     lc+=1 #laura
+    else: #laura
+     other+=1 #laura
+   w_gen=1/((np.sum(geo>0))+(np.sum(soil>0))+np.sum(lc>0)+np.sum(other>0)) #laura
+
+   for var in covariates:
+    if var in ['lats','lons']: #laura
+     covariates[var]['w'] = w_gen/geo #laura
+    elif var in ['clay','sand','silt','BB','DRYSMC','MAXSMC','REFSMC','SATPSI','SATDK','SATDW','WLTSMC','QTZ']: #laura
+     covariates[var]['w'] = w_gen/soil #laura
+    elif var in ['lc_w_now','lc_urb_nourb','lc_grass_forest','ndvi']: #laura
+     covariates[var]['w'] = w_gen/lc #laura
+    else: #laura
+     covariates[var]['w'] = w_gen/other #laura
+    #covariates[var]['w'] = ws[list(ccp).index(var)] #laura: commented out
+    
    #prepare the covariate data
    X = []
    for var in covariates:
@@ -1330,18 +1368,12 @@ def create_hrus_hydroblocks(hillslopes,htiles,covariates,nclusters):
     #argsort = np.argsort(tmp)
     #tmp[argsort] = np.linspace(0,1,tmp.size)
     X.append(tmp)
-   #cluster the data
+    #cluster the data
    X = np.array(X).T
    clusters = cluster_data(X,nc)+maxc
-   #state = 35799
-   #if (X.shape[0] >= nc):
-   # model = sklearn.cluster.KMeans(n_clusters=nc,random_state=state)
-   # clusters = model.fit_predict(X)+maxc
-   #else:
-    #clusters = np.zeros(X.shape[0])+maxc
+   
    hrus[mt] = clusters
    maxc = np.max(clusters)+1
-
  #Cleanup hrus
  ttf.cleanup_hillslopes(hrus)
  hrus[hrus >= 0] = hrus[hrus >= 0] + 1
@@ -1990,9 +2022,10 @@ def calculate_inlets_oulets_workhorse(channels_wob,fdir,area,mask,lats,lons,mask
     inew = i+positions[ipos,0]
     jnew = j+positions[ipos,1]
     if ((inew < 0) | (jnew < 0) | (inew >= channels_wob.shape[0]) | (jnew >= channels_wob.shape[1])):continue
-    if ((fdir[inew,jnew,0] == i+1) & (fdir[inew,jnew,1] == j+1)) & (mask[inew,jnew] == False):
+    if mask[inew,jnew] == False:
+     #if (fdir[inew,jnew,0] != -9999) | (fdir[inew,jnew,1] != -9999):
      #if ((area[inew,jnew] > 10**4) & (mask_all[inew,jnew] != -9999)):
-     if ((area[inew,jnew] > 10**5) & (mask_all[inew,jnew] != -9999)):
+     if ((area[inew,jnew] > 10**6) & (mask_all[inew,jnew] != -9999)):
       i_inlet += 1
       #Determine origin and destination grid id, lat, and lon
       inlet_org[i_inlet,0] = mask_all[inew,jnew]
@@ -2008,7 +2041,7 @@ def calculate_inlets_oulets_workhorse(channels_wob,fdir,area,mask,lats,lons,mask
    #Determine outlets
    inew = fdir[i,j,0]-1
    jnew = fdir[i,j,1]-1
-   if ((area[inew,jnew] > 10**4) & (mask[inew,jnew] == False) & (mask_all[inew,jnew] != -9999)):
+   if ((area[inew,jnew] > 10**6) & (mask[inew,jnew] == False) & (mask_all[inew,jnew] != -9999)):
       #print(inew,jnew,inew.dtype,jnew.dtype,area.dtype)
       #if (area[inew,jnew] > 10**5):
       # if (mask[inew,jnew] == False):
@@ -2246,7 +2279,7 @@ def cdf_match_hand_values(hand,basins,basin_clusters):
     
  return nhand
 
-def create_basin_tiles_updated(basin_clusters,hand,basins,n_binning,max_nbins=100):
+def create_basin_tiles_updated(basin_clusters,hand,basins,n_binning,cid,max_nbins=100):
     
     #print('before',max(np.unique(hand)))
     nhand = cdf_match_hand_values(hand,basins,basin_clusters)
@@ -2288,7 +2321,6 @@ def create_basin_tiles_updated(basin_clusters,hand,basins,n_binning,max_nbins=10
         tmp[-1] = np.max(data)
         #Place the data
         bin_edges[ubc-1,:tmp.size+1] = np.concatenate((np.array([0.0,]),tmp))
-    
     #Determine band position
     band_position = determine_band_position(nhand,bin_edges,basin_clusters)
     
