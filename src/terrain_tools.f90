@@ -989,9 +989,9 @@ recursive subroutine channels_upstream_wprop(i,j,fdir,channels,positions,nx,ny,c
   if ((fdir(inew,jnew,1) .eq. i) .and. (fdir(inew,jnew,2) .eq. j))then
    if (mask(inew,jnew) .eq. 1) then
     !Make sure we are above the threshold
-    if (area(inew,jnew) .ge. basin_threshold) then
-     count = count + 1
-    endif
+    !if (area(inew,jnew) .ge. basin_threshold) then
+    count = count + 1
+    !endif
    endif
   endif
  enddo
@@ -1026,7 +1026,7 @@ recursive subroutine channels_upstream_wprop(i,j,fdir,channels,positions,nx,ny,c
    if ((inew.lt.1).or.(jnew.lt.1).or.(inew.gt.nx).or.(jnew.gt.ny)) cycle
    if ((fdir(inew,jnew,1) .eq. i) .and. (fdir(inew,jnew,2) .eq. j))then
     if (mask(inew,jnew) .eq. 1) then
-     if (area(inew,jnew) .ge. basin_threshold)then
+     !if (area(inew,jnew) .ge. basin_threshold)then
       hcid = hcid + 1
       cid = hcid
       mask(inew,jnew) = 0
@@ -1036,14 +1036,14 @@ recursive subroutine channels_upstream_wprop(i,j,fdir,channels,positions,nx,ny,c
                              cid,npos,mask,basin_threshold,area,hcid,&
                              channel_topology,shreve_order)
       shreve_order(i,j) = shreve_order(i,j) + shreve_order(inew,jnew) !Add upstream shreve order to current reach
-     else
-      mask(inew,jnew) = 0
-      channels(inew,jnew) = cid_org
-      call channels_upstream_wprop(inew,jnew,fdir,channels,positions,nx,ny,&
-                             cid_org,npos,mask,basin_threshold,area,hcid,&
-                             channel_topology,shreve_order)
-      shreve_order(i,j) = shreve_order(inew,jnew)
-     endif
+     !else
+     ! mask(inew,jnew) = 0
+     ! channels(inew,jnew) = cid_org
+     ! call channels_upstream_wprop(inew,jnew,fdir,channels,positions,nx,ny,&
+     !                        cid_org,npos,mask,basin_threshold,area,hcid,&
+     !                        channel_topology,shreve_order)
+     ! shreve_order(i,j) = shreve_order(inew,jnew)
+     !endif
     endif
    endif
   enddo
@@ -1148,7 +1148,6 @@ subroutine calculate_channels_wocean_wprop_wcrds(area_in,area_all_in,threshold,&
    !Define outlet beyond catchment
    channel_topology(cid) = -1
   endif
-  cmask(i,j) = 0
 
   !Find the pixel downstream (outside of the macroscale polygon) that it flows
   !into
@@ -1157,12 +1156,17 @@ subroutine calculate_channels_wocean_wprop_wcrds(area_in,area_all_in,threshold,&
    jnew = j+positions(pos,2)
    if ((inew .lt. 1) .or. (jnew .lt. 1) .or. (inew .gt. nx) .or. (jnew .gt.ny))cycle
    if ((fdir(i,j,1) .eq. inew) .and. (fdir(i,j,2) .eq. jnew))then
-    channel_outlet_id(cid) = cid
-    channel_outlet_target_crds(cid,1) = lats(inew,jnew)
-    channel_outlet_target_crds(cid,2) = lons(inew,jnew)
-    channel_outlet_target_nmp(cid) = mask_all(inew,jnew)
+    if (cmask(i,j) .eq. 1)then
+     channel_outlet_id(cid) = cid
+     channel_outlet_target_crds(cid,1) = lats(inew,jnew)
+     channel_outlet_target_crds(cid,2) = lons(inew,jnew)
+     channel_outlet_target_nmp(cid) = mask_all(inew,jnew)
+    endif
    endif
   enddo
+
+  !Set the channel mask at that point to 0
+  cmask(i,j) = 0
 
   !Go upstream
   call channels_upstream_wprop_wcrds(i,j,fdir,channels,positions,nx,ny,cid,npos,&
@@ -1304,7 +1308,7 @@ recursive subroutine channels_upstream_wprop_wcrds(i,j,fdir,channels,positions,n
    if ((inew.lt.1).or.(jnew.lt.1).or.(inew.gt.nx).or.(jnew.gt.ny)) cycle
    if ((fdir(inew,jnew,1) .eq. i) .and. (fdir(inew,jnew,2) .eq. j))then
     if (mask(inew,jnew) .eq. 1) then
-     if (area(inew,jnew) .ge. basin_threshold)then
+     !if (area(inew,jnew) .ge. basin_threshold)then
       hcid = hcid + 1
       cid = hcid
       mask(inew,jnew) = 0
@@ -1321,19 +1325,19 @@ recursive subroutine channels_upstream_wprop_wcrds(i,j,fdir,channels,positions,n
                              mask_all,area_all,channel_inlet_id,channel_inlet_target_nmp,&
                              channel_inlet_target_crds)
       shreve_order(i,j) = shreve_order(i,j) + shreve_order(inew,jnew) !Add upstream shreve order to current reach
-     else
-      mask(inew,jnew) = 0
-      channels(inew,jnew) = cid_org
-      !Memorize the coordinates (of the downstream reach; this creates the link)
-      crds(cid,crds_count(cid),1) = lats(inew,jnew)
-      crds(cid,crds_count(cid),2) = lons(inew,jnew)
-      call channels_upstream_wprop_wcrds(inew,jnew,fdir,channels,positions,nx,ny,&
-                             cid_org,npos,mask,basin_threshold,area,hcid,&
-                             channel_topology,shreve_order,lats,lons,crds,crds_count,&
-                             mask_all,area_all,channel_inlet_id,channel_inlet_target_nmp,&
-                             channel_inlet_target_crds)
-      shreve_order(i,j) = shreve_order(inew,jnew)
-     endif
+     !else
+     ! mask(inew,jnew) = 0
+     ! channels(inew,jnew) = cid_org
+     ! !Memorize the coordinates (of the downstream reach; this creates the link)
+     ! crds(cid,crds_count(cid),1) = lats(inew,jnew)
+     ! crds(cid,crds_count(cid),2) = lons(inew,jnew)
+     ! call channels_upstream_wprop_wcrds(inew,jnew,fdir,channels,positions,nx,ny,&
+     !                        cid_org,npos,mask,basin_threshold,area,hcid,&
+     !                        channel_topology,shreve_order,lats,lons,crds,crds_count,&
+     !                        mask_all,area_all,channel_inlet_id,channel_inlet_target_nmp,&
+     !                        channel_inlet_target_crds)
+     ! shreve_order(i,j) = shreve_order(inew,jnew)
+     !endif
     else if ((mask_all(inew,jnew) .ne. mask_all(i,j)) .and. (mask_all(inew,jnew) .ne. -9999))then
      count_inlets = count_inlets + 1
      channel_inlet_id(cid) = channels(i,j)
