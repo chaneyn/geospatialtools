@@ -1340,10 +1340,10 @@ recursive subroutine channels_upstream_wprop_wcrds(i,j,fdir,channels,positions,n
      !endif
     else if ((mask_all(inew,jnew) .ne. mask_all(i,j)) .and. (mask_all(inew,jnew) .ne. -9999))then
      count_inlets = count_inlets + 1
-     channel_inlet_id(cid) = channels(i,j)
-     channel_inlet_target_nmp(cid,count_inlets) = mask_all(inew,jnew)
-     channel_inlet_target_crds(cid,count_inlets,1) = lats(inew,jnew)
-     channel_inlet_target_crds(cid,count_inlets,2) = lons(inew,jnew)
+     channel_inlet_id(channels(i,j)) = channels(i,j)
+     channel_inlet_target_nmp(channels(i,j),count_inlets) = mask_all(inew,jnew)
+     channel_inlet_target_crds(channels(i,j),count_inlets,1) = lats(inew,jnew)
+     channel_inlet_target_crds(channels(i,j),count_inlets,2) = lons(inew,jnew)
     endif
    endif
   enddo
