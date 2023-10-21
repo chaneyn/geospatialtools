@@ -1081,7 +1081,7 @@ subroutine calculate_channels_wocean_wprop_wcrds(area_in,area_all_in,threshold,&
  integer,dimension(100000) :: crds_count
  integer,dimension(2) :: placement
  integer,dimension(:,:),allocatable :: positions
- integer :: i,j,pos,cid,k,l,npos,imin,imax,jmin,jmax,hcid,inew,jnew
+ integer :: i,j,pos,cid,k,l,npos,imin,imax,jmin,jmax,hcid,inew,jnew,m
  logical :: bool
  real :: undef
  undef = -9999.0
@@ -1139,6 +1139,20 @@ subroutine calculate_channels_wocean_wprop_wcrds(area_in,area_all_in,threshold,&
   placement = maxloc(area)
   i = placement(1)
   j = placement(2)
+
+  !Determine if it flows into another pixel within the same macroscale polygon
+  !(same accumulation area issue in merit hydro); if so change
+  do m=1,1000
+   inew = fdir(i,j,1)
+   jnew = fdir(i,j,2)
+   if ((area(inew,jnew) .eq. area(i,j)) .and. (cmask(i,j) .eq. 1))then
+    i = inew
+    j = jnew
+   else
+    exit
+   endif
+  enddo
+
   !Set the channel id
   if ((cmask(i,j) .eq. 1) .and. (area(i,j) .ge. basin_threshold))then
    channels(i,j) = cid
